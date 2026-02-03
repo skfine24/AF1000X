@@ -4,18 +4,19 @@
 #include <Arduino.h>
 
 /* ============================================================================
- * AIRGO_EasyCommander.h  (AF1000X 코어 호환 버전)
- * ----------------------------------------------------------------------------
- * - 기존 "FlightMode mode" 대신, 코어의 "currentMode" (uint8_t)를 사용
- * - READY/TAKEOFF/HOVERING/LANDING/EMERGENCY 상수도 코어 값에 맞춰 정의
- * - 학생은 메인에서 takeoff(); forwardCm(10,90); 처럼 쓰면 됨
- * ========================================================================== */
+ * KO: EasyCommander (AF1000X 코어 호환)
+ * EN: EasyCommander (AF1000X core compatible)
+ * KO: currentMode 기반, 모드 상수는 코어와 동일해야 함
+ * EN: Uses currentMode; mode constants must match core
+ * ============================================================================
+ */
 
-// ---------------------------------------------------------------------------
-// 코어(AF1000X.h)에서 제공되는 전역 변수/함수들
-// ---------------------------------------------------------------------------
-extern volatile uint8_t currentMode;    // 코어의 상태 변수
-extern bool flightLock;                 // 센서 실패 비행 금지
+// ============================================================================
+// KO: 코어 extern (AF1000X_CORE.h 제공)
+// EN: Core externs (from AF1000X_CORE.h)
+// ============================================================================
+extern volatile uint8_t currentMode;    // KO: 코어 상태 / EN: core state
+extern bool flightLock;                 // KO: 센서 실패 비행 금지 / EN: flight lock
 
 extern float targetAltitude, currentAltitude;
 extern float targetPosX, targetPosY, targetYaw;
@@ -33,10 +34,10 @@ extern void autoTakeoff();
 extern void autoLanding();
 extern void emergencyStop();
 
-// ---------------------------------------------------------------------------
-// 코어의 MODE_* 값과 맞추기 (AF1000X.h와 동일해야 함)
-// (AF1000X.h에서 READY=0, TAKEOFF=1, HOVERING=2, LANDING=3, EMERGENCY=4 로 사용중)
-// ---------------------------------------------------------------------------
+// ============================================================================
+// KO: MODE_* 값은 코어와 동일해야 함
+// EN: MODE_* values must match core
+// ============================================================================
 #ifndef READY
   #define READY      0
   #define TAKEOFF    1
@@ -45,10 +46,10 @@ extern void emergencyStop();
   #define EMERGENCY  4
 #endif
 
-// ---------------------------------------------------------------------------
-// 내부 유틸: 제어 루프를 멈추지 않고 기다리는 함수
-// - ms=0 이면 “한 틱만” 돌리고 리턴(루프 안에서 계속 호출하는 방식)
-// ---------------------------------------------------------------------------
+// ============================================================================
+// KO: 내부 유틸 (제어 루프를 멈추지 않는 대기)
+// EN: Internal util (wait without stopping control loop)
+// ============================================================================
 static inline void _airgo_yield(unsigned long ms = 0) {
   if (ms == 0) {
     updateSystem();
@@ -66,29 +67,33 @@ static inline void _airgo_yield(unsigned long ms = 0) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 안전 가드
-// ---------------------------------------------------------------------------
+// ============================================================================
+// KO: 안전 가드
+// EN: Safety guard
+// ============================================================================
 static inline bool _airgo_readyToFly() {
   if (flightLock) return false;
   if (currentMode == EMERGENCY) return false;
   return true;
 }
 
-// ===========================================================================
-// 1) Core Flight
-// ===========================================================================
+// ============================================================================
+// KO: 1) 기본 비행
+// EN: 1) Core flight
+// ============================================================================
 static inline void takeoff() {
   if (!_airgo_readyToFly()) return;
   if (currentMode != READY) return;
 
   Serial.println("[CMD] Takeoff");
-  autoTakeoff();                // 코어의 hover-learn takeoff를 시작
+  autoTakeoff();                // KO: hover 학습 takeoff / EN: hover-learn takeoff
 
-  // TAKEOFF 상태가 끝날 때까지(=HOVERING 들어갈 때까지) 계속 제어
+  // KO: TAKEOFF 종료까지 대기
+  // EN: Wait until TAKEOFF completes
   while (currentMode == TAKEOFF) _airgo_yield(0);
 
-  // TAKEOFF가 끝났는데도 HOVERING이 아니면(실패/락 등) 그냥 종료
+  // KO: HOVERING 진입 실패 시 종료
+  // EN: Exit if not HOVERING
 }
 
 static inline void land() {
@@ -111,11 +116,10 @@ static inline void killMotors() {
   emergencyStop();
 }
 
-// ===========================================================================
-// 2) CM 이동 명령 (정확도는 OpticalFlow/융합 성능에 의해 결정됨)
-// - 목표좌표를 “조금씩” 이동시키며 updateFlight가 따라가게 한다.
-// - pwr(%)는 속도 계수
-// ===========================================================================
+// ============================================================================
+// KO: 2) CM 이동 명령 (정확도는 센서/융합 성능에 의존)
+// EN: 2) CM moves (accuracy depends on sensors/fusion)
+// ============================================================================
 static inline void forwardCm(float cm, float pwr) {
   if (currentMode != HOVERING) return;
   if (cm <= 0) return;
@@ -125,12 +129,13 @@ static inline void forwardCm(float cm, float pwr) {
 
   Serial.printf("[CMD] Forward %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
-  // 헤딩(yaw) 기준으로 전진
+  // KO: 헤딩(yaw) 기준 전진
+  // EN: Forward in heading frame
   float rad = targetYaw * DEG_TO_RAD;
   float moved = 0.0f;
 
   while (moved < dM) {
-    float step = (moveSpeedSteps[speedLevel] * p) * 0.02f;  // 50Hz 기준
+    float step = (moveSpeedSteps[speedLevel] * p) * 0.02f;  // KO: 50Hz 기준 / EN: 50Hz base
     if (step < 0.001f) step = 0.001f;
 
     targetPosX += step * cosf(rad);
@@ -176,7 +181,7 @@ static inline void rightCm(float cm, float pwr) {
 
   Serial.printf("[CMD] Right %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
-  float rad = (targetYaw + 90.0f) * DEG_TO_RAD; // 오른쪽
+  float rad = (targetYaw + 90.0f) * DEG_TO_RAD; // KO: 오른쪽 / EN: right
   float moved = 0.0f;
 
   while (moved < dM) {
@@ -201,7 +206,7 @@ static inline void leftCm(float cm, float pwr) {
 
   Serial.printf("[CMD] Left %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
-  float rad = (targetYaw - 90.0f) * DEG_TO_RAD; // 왼쪽
+  float rad = (targetYaw - 90.0f) * DEG_TO_RAD; // KO: 왼쪽 / EN: left
   float moved = 0.0f;
 
   while (moved < dM) {
@@ -252,9 +257,10 @@ static inline void downCm(float cm, float pwr) {
   }
 }
 
-// ===========================================================================
-// 3) 회전
-// ===========================================================================
+// ============================================================================
+// KO: 3) 회전
+// EN: 3) Rotation
+// ============================================================================
 static inline void turnAngle(float deg, float pwr) {
   if (currentMode != HOVERING) return;
   if (deg == 0) return;
@@ -266,7 +272,8 @@ static inline void turnAngle(float deg, float pwr) {
   float start = targetYaw;
   float goal  = start + deg;
 
-  // wrap
+  // KO: 각도 래핑
+  // EN: wrap
   while (goal > 180.0f) goal -= 360.0f;
   while (goal < -180.0f) goal += 360.0f;
 
@@ -275,7 +282,8 @@ static inline void turnAngle(float deg, float pwr) {
   while (fabsf(targetYaw - goal) > 1.0f) {
     targetYaw += dir * (yawSpeedSteps[speedLevel] * p) * 0.02f;
 
-    // wrap
+    // KO: 각도 래핑
+    // EN: wrap
     while (targetYaw > 180.0f) targetYaw -= 360.0f;
     while (targetYaw < -180.0f) targetYaw += 360.0f;
 
@@ -298,7 +306,8 @@ static inline void turnTime(float sec, float pwr) {
   unsigned long ms = (unsigned long)(sec * 1000.0f);
   unsigned long start = millis();
 
-  // 시간 동안 계속 같은 방향 회전(+)로 예시
+  // KO: 지정 시간 동안 한 방향 회전 예시
+  // EN: Example: rotate in one direction for duration
   while (millis() - start < ms) {
     targetYaw += (yawSpeedSteps[speedLevel] * p) * 0.02f;
     while (targetYaw > 180.0f) targetYaw -= 360.0f;
@@ -309,4 +318,4 @@ static inline void turnTime(float sec, float pwr) {
   }
 }
 
-#endif // AF1000X_EASY_COMMANDER_H
+#endif // KO: AF1000X_EASY_COMMANDER_H / EN: AF1000X_EASY_COMMANDER_H

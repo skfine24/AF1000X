@@ -1,35 +1,21 @@
 #define AF1000X_IMPLEMENTATION
 #include "AF1000X_CORE.h"
 #include "AF1000X_EasyCommander.h"
-float g_loopDt = 0.02f;  // global loop dt (seconds)
+float g_loopDt = 0.02f;  // KO: 글로벌 루프 dt(초) / EN: global loop dt (seconds)
 
 void setup() {
   Serial.begin(115200);
-  Serial.setTimeout(5); // keep any legacy Serial reads snappy
+  Serial.setTimeout(5); // KO: 레거시 Serial 응답 빠르게 / EN: keep legacy Serial reads snappy
   delay(300);
 
+  Serial.println();
+  Serial.println("SYUBEA Co., LTD");
+  Serial.println("www.1510.co.kr");
+  Serial.print("Model : AF1000X FC - Ver.");
+  Serial.println(FC_VERSION);
+  Serial.println();
   initAF1000X();
-
-  // 자동 보정(지상)
-  calibrate();
-
-  Serial.println("================================");
-  Serial.println("AF1000X FIXED VERSION - Ready");
-  Serial.println("================================");
-  Serial.println("Serial commands:");
-  Serial.println("  T  -> auto takeoff (hover learn to 1m)");
-  Serial.println("  L  -> land");
-  Serial.println("  K  -> kill motors (EMERGENCY)");
-  Serial.println("  C  -> flow auto calibration");
-  Serial.println("  Y0 -> yaw reset");
-  Serial.println("  D60.0 -> refine flowK with 60.0cm measured");
-  Serial.println("  B  -> check battery voltage");
-  Serial.println("================================");
-  Serial.println("⚠️  SAFETY CHECKS:");
-  Serial.println("  1. Binding status: Check LEDs");
-  Serial.println("  2. Battery voltage: Type 'B'");
-  Serial.println("  3. Sensor status: Check POST");
-  Serial.println("================================");
+  Serial.println("Use `PID?` / `PIDDEF` outputs to back up key tuning values");  
 }
 
 void loop() {

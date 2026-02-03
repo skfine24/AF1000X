@@ -1,150 +1,83 @@
+# AF1000X Educational Micro Drone Firmware
+AF1000X 교육용 마이크로 드론 펌웨어
 
-# AF1000X – Educational Micro Drone Firmware  
-AF1000X – 교육용 마이크로 드론 펌웨어
+AF1000X는 교육 및 연구 목적의 **마이크로 드론 펌웨어 프로젝트**입니다.  
+PCB 하드웨어부터 펌웨어, 비행 제어 로직까지 **드론 시스템 전체를 이해**할 수 있도록 구성했습니다.
 
----
-
-## 🇰🇷 한국어 소개
-
-AF1000X는 **교육·연구 목적의 마이크로 드론**을 위해 설계된 오픈소스 펌웨어 프로젝트입니다.  
-회로(PCB) 설계부터 펌웨어, 제어 로직까지 **드론 시스템 전체를 이해하고 학습할 수 있도록** 구성되었습니다.
-
-본 프로젝트는 단순한 완구 드론이 아닌,  
-👉 **“구조와 동작 원리를 이해할 수 있는 드론”**을 목표로 합니다.
-
-현재 코드는 **실제 비행 가능한 단계**까지 구현되어 있으며,  
-PCB 수령 후 실기 테스트 및 튜닝을 예정하고 있습니다.
-
----
-
-### ✨ 주요 기능 (한국어)
-
-#### 🧠 비행 제어
-- IMU 기반 자세 안정화
-- 고도 유지 / 호버링
-- 자동 이륙 / 자동 착륙
-- 헤드리스(Headless) 모드
-
-#### 📡 무선 통신
-- nRF24L01 기반 2.4GHz 통신
-- 페어링 / 바인딩 구조 분리
-- 재부팅 후에도 안정적인 재연결
-
-#### 💡 LED 상태 표시 (교육 친화적)
-- **부팅**
-  - 정상 부팅: 모든 LED 깜박임
-  - 뒤집힌 상태 부팅: LED1→2→3→4 체이서
-- **바인딩 완료**: 모든 LED ON (1초)
-- **저전압 경고**: 모든 LED 1초 ON / 1초 OFF
-- **자이로 초기화**: 모든 LED 1초 ON / 0.5초 OFF ×3
-- **헤드리스 모드**: LED3 / LED4 2초 ON / 1초 OFF
-
-👉 LED만 보고도 드론의 상태를 직관적으로 확인할 수 있습니다.
-
-#### 🎮 조종기 연동
-- MODE 2 기본 / MODE 1 선택 가능 (전원 ON 시 버튼)
-- 속도 단계 전환
-- 자동 이륙 / 착륙
-- 헤드리스 토글
-- 수평 트림 (비영구, 전원 OFF 시 초기화)
-
----
-
-### 📁 프로젝트 구조
-
-```
-AF1000X/
-├── AF1000X_Main.ino
-├── AF1000X_CORE.h
-├── AF1000X_BINDING.h
-├── AF1000X_Hover.h
-├── AF1000X_EasyCommander.h
-└── README.md
-```
-
----
-
-### 🎯 프로젝트 목표
-- 교육용 / 학습용 드론 플랫폼
-- 회로 + 펌웨어 + 제어 이론 통합 학습
-- 대회 및 연구용 베이스 플랫폼 제공
-- 확장과 커스터마이징이 쉬운 구조
-
----
-
-### 🧪 개발 상태
-- 컴파일 에러 없음
-- LED 상태 머신 통합 완료
-- 바인딩 및 재부팅 시퀀스 안정화
-- PCB 실물 테스트 예정
-
-⚠️ 하드웨어 리비전에 따라 전압 계수, IMU 방향 보정이 필요할 수 있습니다.
-
----
-
-## 🇺🇸 English Description
-
-AF1000X is an **open-source firmware project for an educational micro drone**.  
+AF1000X is an **educational micro-drone firmware project**.  
 It is designed to help learners understand the **entire drone system**, from PCB hardware to firmware and flight control logic.
 
-Rather than being a toy drone, AF1000X aims to be:  
-👉 **“A drone you can truly understand.”**
+---
 
-The firmware has reached a **real flight-capable stage**,  
-and hardware testing will begin once the custom PCB is available.
+## 주요 기능 (KR)
+1. IMU 기반 자세 안정화 (Roll / Pitch / Yaw)
+2. ToF + 기압계(SPL06) 융합 고도 추정 및 호버링
+3. 옵티컬 플로우(PMW3901) 기반 위치 보정
+4. nRF24L01 2.4GHz 무선 통신 + 바인딩 + 홉 테이블
+5. 배터리 전압 모니터링 및 경고/크리티컬 상태 처리
+6. LED 상태 표시(부팅/바인딩/저전압/자이로/헤드리스/오토튠)
+7. 시리얼 명령 지원 및 IMU 스트리밍 (`1510` 시작, `1511` 중지)
+
+## Key Features (EN)
+1. IMU-based attitude stabilization (Roll / Pitch / Yaw)
+2. Fused altitude estimation using ToF + barometer (SPL06) with hovering
+3. Optical flow (PMW3901) position correction
+4. nRF24L01 2.4GHz wireless link + binding + hop table
+5. Battery voltage monitoring with warning/critical handling
+6. LED state indication (boot/bind/low-batt/gyro/headless/auto-tune)
+7. Serial command support and IMU streaming (`1510` start, `1511` stop)
 
 ---
 
-### ✨ Key Features (English)
+## 자동화된 기능 (KR)
+1. 자동 이륙 / 자동 착륙
+2. Hover 학습으로 `hoverThrottle` 자동 보정 및 저장
+3. 옵티컬 플로우 자동 캘리브레이션(FlowK) 시퀀스
+4. 센서 POST 및 자동 초기화(IMU/ToF/Baro/Flow)
+5. 링크 끊김 시 페일세이프: 유지 후 착륙
+6. 저전압 시 경고 및 비상 착륙 처리
+7. Hover 안정 후 자동 튜닝(고도 PD + 요 P)
 
-#### 🧠 Flight Control
-- IMU-based attitude stabilization
-- Altitude hold / hovering
-- Auto takeoff & auto landing
-- Headless flight mode
-
-#### 📡 Wireless Communication
-- 2.4GHz nRF24L01 radio link
-- Separated pairing / binding logic
-- Stable reconnection after reboot
-
-#### 💡 LED State Indication
-- **Boot**
-  - Normal boot: all LEDs blinking
-  - Inverted boot: LED1→2→3→4 chasing pattern
-- **Binding complete**: all LEDs ON for 1 second
-- **Low battery warning**: all LEDs 1s ON / 1s OFF
-- **Gyro initialization**: all LEDs 1s ON / 0.5s OFF ×3
-- **Headless mode**: LED3 / LED4 2s ON / 1s OFF
-
-LED patterns are designed to provide **clear, intuitive feedback** without any tools.
-
-#### 🎮 Transmitter Support
-- MODE 2 by default / MODE 1 selectable at power-on
-- Speed level switching
-- Auto takeoff / landing trigger
-- Headless mode toggle
-- Trim adjustment (RAM only, resets on power cycle)
+## Automated Features (EN)
+1. Auto takeoff / auto landing
+2. Hover learning with auto-adjust and persistence of `hoverThrottle`
+3. Optical-flow auto calibration (FlowK) sequence
+4. Sensor POST and auto initialization (IMU/ToF/Baro/Flow)
+5. Failsafe on link loss: hold then land
+6. Low-battery warning and emergency landing handling
+7. Auto tuning after hover ready (altitude PD + yaw P)
 
 ---
 
-### 🎯 Project Goals
-- Educational and research-oriented drone platform
-- Integrated learning of hardware, firmware, and control theory
-- Suitable for students, makers, and competitions
-- Highly customizable and extendable codebase
+## 특징 (KR)
+1. 교육/연구용에 최적화된 모듈 구조 (`CORE`, `BINDING`, `HOVER`, `EasyCommander`)
+2. PC 도구 제공
+   - 펌웨어 업로더 (PYW + 자동 의존성 설치)
+   - IMU 뷰어 (PYW + 자동 의존성 설치, 그래프/3D 자세 표시)
+3. 시리얼 출력/로그 기반 디버깅 용이
+4. UI 한글/영문 자동 전환 지원
+
+## Highlights (EN)
+1. Modular structure optimized for education/research (`CORE`, `BINDING`, `HOVER`, `EasyCommander`)
+2. PC tools included
+   - Firmware updater (PYW + auto dependency install)
+   - IMU viewer (PYW + auto dependency install, graph/3D attitude)
+3. Easy debugging via serial logs/output
+4. Automatic UI language switch (Korean/English)
 
 ---
 
-### 📜 License
-This project is primarily intended for **educational and research use**.  
-The license will be defined in a future update.
+## 프로젝트 구조 / Project Structure
+```
+AF1000X/
+├─ AF1000X_Main.ino
+├─ AF1000X_CORE.h
+├─ AF1000X_BINDING.h
+├─ AF1000X_Hover.h
+├─ AF1000X_EasyCommander.h
+├─ README.md
+```
 
 ---
 
-### 🙌 Contribution
-Ideas, improvements, and test feedback are always welcome.
-
----
-
-**AF1000X – Build, Learn, Fly.**
+© SYUBEA
