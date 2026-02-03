@@ -1,4 +1,4 @@
-# AF1000X Educational Micro Drone Firmware
+# AF1000X (Educational Drone) Fly Controller
 AF1000X 교육용 마이크로 드론 펌웨어
 
 AF1000X는 교육 및 연구 목적의 **마이크로 드론 펌웨어 프로젝트**입니다.  
@@ -6,6 +6,9 @@ PCB 하드웨어부터 펌웨어, 비행 제어 로직까지 **드론 시스템 
 
 AF1000X is an **educational micro-drone firmware project**.  
 It is designed to help learners understand the **entire drone system**, from PCB hardware to firmware and flight control logic.
+
+한국 주식회사 슈베아에서 개발한 FC이며, 제품 구입 문의는 hello@1510.co.kr 로 연락 부탁드립니다.  
+This FC is developed by SYUBEA Co., Ltd. (Korea). For purchase inquiries, please contact hello@1510.co.kr.
 
 ---
 
@@ -64,6 +67,52 @@ It is designed to help learners understand the **entire drone system**, from PCB
    - IMU viewer (PYW + auto dependency install, graph/3D attitude)
 3. Easy debugging via serial logs/output
 4. Automatic UI language switch (Korean/English)
+
+---
+
+## 주요 칩셋 스펙 (KR)
+1. MCU: ESP32-S3 (메인 컨트롤러)
+2. IMU: ICM45686 (6축 가속/자이로, I2C)
+3. 기압계: SPL06 (압력/고도, I2C)
+4. ToF: VL53L1X (거리/고도, I2C, XSHUT 제어)
+5. 옵티컬 플로우: PMW3901 (SPI)
+6. RF: nRF24L01 (2.4GHz, SPI)
+7. 배터리 ADC: 1S LiPo 전압 모니터링 (ADC)
+8. 제품 사이즈: 35mm x 35mm
+
+## Key Chipset Specs (EN)
+1. MCU: ESP32-S3 (main controller)
+2. IMU: ICM45686 (6-axis accel/gyro, I2C)
+3. Barometer: SPL06 (pressure/altitude, I2C)
+4. ToF: VL53L1X (range/altitude, I2C, XSHUT control)
+5. Optical flow: PMW3901 (SPI)
+6. RF: nRF24L01 (2.4GHz, SPI)
+7. Battery ADC: 1S LiPo voltage monitor (ADC)
+8. Board size: 35mm x 35mm
+
+Note: For detailed electrical specs, refer to each chip's datasheet.
+
+---
+
+## 파일 설명 (KR)
+- `AF1000X_Main.ino`: 스케치 엔트리, setup/loop 및 모듈 연결
+- `AF1000X_CORE.h`: 센서 초기화, 자세/고도/포지션 추정, 제어 루프, 상태/LED, 시리얼 명령 등 핵심 로직
+- `AF1000X_BINDING.h`: RF 바인딩/홉테이블/패킷 처리
+- `AF1000X_Hover.h`: Hover 학습 및 hoverThrottle 보정/저장
+- `AF1000X_EasyCommander.h`: Takeoff/Land 등 간단 커맨드 래퍼
+- `AF1000X_AutoTune.h`: 자동 튜닝 루틴
+- `AF1000X_GPIO.h`: 핀맵 정의 (I2C/SPI/RF/모터/LED/ADC)
+- `AF1000X_PID.h`: PID/제어 파라미터 정의
+
+## File Descriptions (EN)
+- `AF1000X_Main.ino`: Sketch entry, setup/loop and module wiring
+- `AF1000X_CORE.h`: Sensor init, attitude/altitude/position estimation, control loop, status/LED, serial commands
+- `AF1000X_BINDING.h`: RF binding, hop table, packet handling
+- `AF1000X_Hover.h`: Hover learning and hoverThrottle adjustment/persistence
+- `AF1000X_EasyCommander.h`: Convenience commands (takeoff/land)
+- `AF1000X_AutoTune.h`: Auto-tuning routines
+- `AF1000X_GPIO.h`: Pin map (I2C/SPI/RF/motors/LED/ADC)
+- `AF1000X_PID.h`: PID and control parameters
 
 ---
 
