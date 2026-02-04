@@ -143,24 +143,8 @@ Indication: link-loss LED pattern follows Appendix D.
 
 ## 8. Appendices
 
-## Appendix A. Diagrams and Images
 
-![Figure A-1. System schematic](SCH_Schematic1_1-P1_2026-02-03.png)
-Figure A-1. Full schematic. Use for power, MCU, and RF connectivity reference.
-
-![Figure A-2. RP2040 pin summary](_crop_rp_pins.png)
-Figure A-2. RP2040 pin summary for GPIO placement.
-
-![Figure A-3. Joystick wiring](_crop_joystick.png)
-Figure A-3. Joystick wiring summary for axes and center reference.
-
-![Figure A-4. MUX wiring](_crop_mux.png)
-Figure A-4. MUX base wiring for ADC multiplexing path.
-
-![Figure A-5. MUX wiring detail](_crop_mux2.png)
-Figure A-5. MUX wiring detail for S0 and ADC connections.
-
-## Appendix B. AR1000X Pin Map (Summary)
+## Appendix A. AR1000X Pin Map (Summary)
 | Category | Signal | GPIO | Notes |
 | --- | --- | --- | --- |
 | RF | RF_CE | 6 | nRF24L01+ CE |

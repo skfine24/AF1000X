@@ -1,21 +1,21 @@
 #define AF1000X_IMPLEMENTATION
 #include "AF1000X_CORE.h"
 #include "AF1000X_EasyCommander.h"
-float g_loopDt = 0.02f;  // KO: 글로벌 루프 dt(초) / EN: global loop dt (seconds)
+float g_loopDt = 0.02f;  // KO: �로벌 루프 dt(�) / EN: global loop dt (seconds)
 
 void setup() {
   Serial.begin(115200);
-  Serial.setTimeout(5); // KO: 레거시 Serial 응답 빠르게 / EN: keep legacy Serial reads snappy
-  delay(300);
+  Serial.setTimeout(5); // KO: ��거시 Serial ���� 빠르� / EN: keep legacy Serial reads snappy
+  delay(1000);
 
-  Serial.println();
-  Serial.println("SYUBEA Co., LTD");
-  Serial.println("www.1510.co.kr");
-  Serial.print("Model : AF1000X FC - Ver.");
-  Serial.println(FC_VERSION);
-  Serial.println();
+  LOG_PRINTLN();
+  LOG_PRINTLN("SYUBEA Co., LTD");
+  LOG_PRINTLN("www.1510.co.kr");
+  LOG_PRINT("Model : AF1000X FC - Ver.");
+  LOG_PRINTLN(FC_VERSION);
+  LOG_PRINTLN();
   initAF1000X();
-  Serial.println("Use `PID?` / `PIDDEF` outputs to back up key tuning values");  
+  LOG_PRINTLN("Use `PID?` / `PIDDEF` outputs to back up key tuning values");  
 }
 
 void loop() {

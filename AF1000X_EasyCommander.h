@@ -4,19 +4,19 @@
 #include <Arduino.h>
 
 /* ============================================================================
- * KO: EasyCommander (AF1000X ì½”ì–´ í˜¸í™˜)
+ * KO: EasyCommander (AF1000X ì½”ì–´ ˜¸™˜)
  * EN: EasyCommander (AF1000X core compatible)
- * KO: currentMode ê¸°ë°˜, ëª¨ë“œ ìƒìˆ˜ëŠ” ì½”ì–´ì™€ ë™ì¼í•´ì•¼ í•¨
+ * KO: currentMode ê¸°ë°˜, ëª¨ë“œ ƒˆ˜Š” ì½”ì–´ ™¼•´•¼ •¨
  * EN: Uses currentMode; mode constants must match core
  * ============================================================================
  */
 
 // ============================================================================
-// KO: ì½”ì–´ extern (AF1000X_CORE.h ì œê³µ)
+// KO: ì½”ì–´ extern (AF1000X_CORE.h  œê³)
 // EN: Core externs (from AF1000X_CORE.h)
 // ============================================================================
-extern volatile uint8_t currentMode;    // KO: ì½”ì–´ ìƒíƒœ / EN: core state
-extern bool flightLock;                 // KO: ì„¼ì„œ ì‹¤íŒ¨ ë¹„í–‰ ê¸ˆì§€ / EN: flight lock
+extern volatile uint8_t currentMode;    // KO: ì½”ì–´ ƒƒœ / EN: core state
+extern bool flightLock;                 // KO: „¼„œ ‹¤Œ¨ ë¹„í–‰ ê¸ˆì / EN: flight lock
 
 extern float targetAltitude, currentAltitude;
 extern float targetPosX, targetPosY, targetYaw;
@@ -35,7 +35,7 @@ extern void autoLanding();
 extern void emergencyStop();
 
 // ============================================================================
-// KO: MODE_* ê°’ì€ ì½”ì–´ì™€ ë™ì¼í•´ì•¼ í•¨
+// KO: MODE_* ê°’ì ì½”ì–´ ™¼•´•¼ •¨
 // EN: MODE_* values must match core
 // ============================================================================
 #ifndef READY
@@ -47,7 +47,7 @@ extern void emergencyStop();
 #endif
 
 // ============================================================================
-// KO: ë‚´ë¶€ ìœ í‹¸ (ì œì–´ ë£¨í”„ë¥¼ ë©ˆì¶”ì§€ ì•ŠëŠ” ëŒ€ê¸°)
+// KO: ‚´ë¶ œ ‹¸ ( œ–´ ë£¨í”„ë¥ ë©ˆì¶”ì§ •ŠŠ” ê¸)
 // EN: Internal util (wait without stopping control loop)
 // ============================================================================
 static inline void _airgo_yield(unsigned long ms = 0) {
@@ -68,7 +68,7 @@ static inline void _airgo_yield(unsigned long ms = 0) {
 }
 
 // ============================================================================
-// KO: ì•ˆì „ ê°€ë“œ
+// KO: •ˆ „ ê°“œ
 // EN: Safety guard
 // ============================================================================
 static inline bool _airgo_readyToFly() {
@@ -85,21 +85,21 @@ static inline void takeoff() {
   if (!_airgo_readyToFly()) return;
   if (currentMode != READY) return;
 
-  Serial.println("[CMD] Takeoff");
-  autoTakeoff();                // KO: hover í•™ìŠµ takeoff / EN: hover-learn takeoff
+  LOG_CMD_PRINTLN("[CMD] Takeoff");
+  autoTakeoff();                // KO: hover •™Šµ takeoff / EN: hover-learn takeoff
 
-  // KO: TAKEOFF ì¢…ë£Œê¹Œì§€ ëŒ€ê¸°
+  // KO: TAKEOFF ì¢…ë£Œê¹Œì ê¸
   // EN: Wait until TAKEOFF completes
   while (currentMode == TAKEOFF) _airgo_yield(0);
 
-  // KO: HOVERING ì§„ì… ì‹¤íŒ¨ ì‹œ ì¢…ë£Œ
+  // KO: HOVERING ì§„ì… ‹¤Œ¨ ‹œ ì¢…ë£Œ
   // EN: Exit if not HOVERING
 }
 
 static inline void land() {
   if (currentMode == READY) return;
 
-  Serial.println("[CMD] Land");
+  LOG_CMD_PRINTLN("[CMD] Land");
   autoLanding();
 
   while (currentMode == LANDING) _airgo_yield(0);
@@ -107,17 +107,17 @@ static inline void land() {
 
 static inline void stay(float sec) {
   if (sec <= 0) return;
-  Serial.printf("[CMD] Stay %.2f sec\n", sec);
+  LOG_CMD_PRINTF("[CMD] Stay %.2f sec\n", sec);
   _airgo_yield((unsigned long)(sec * 1000.0f));
 }
 
 static inline void killMotors() {
-  Serial.println("[CMD] KILL MOTORS!");
+  LOG_CMD_PRINTLN("[CMD] KILL MOTORS!");
   emergencyStop();
 }
 
 // ============================================================================
-// KO: 2) CM ì´ë™ ëª…ë ¹ (ì •í™•ë„ëŠ” ì„¼ì„œ/ìœµí•© ì„±ëŠ¥ì— ì˜ì¡´)
+// KO: 2) CM ´™ ëª…ë ¹ ( •™•„Š” „¼„œ/œµ•© „±Š¥— ˜ì¡)
 // EN: 2) CM moves (accuracy depends on sensors/fusion)
 // ============================================================================
 static inline void forwardCm(float cm, float pwr) {
@@ -127,15 +127,15 @@ static inline void forwardCm(float cm, float pwr) {
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
   float dM = cm * 0.01f;
 
-  Serial.printf("[CMD] Forward %.1f cm (pwr=%.0f%%)\n", cm, pwr);
+  LOG_CMD_PRINTF("[CMD] Forward %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
-  // KO: í—¤ë”©(yaw) ê¸°ì¤€ ì „ì§„
+  // KO: —¤”©(yaw) ê¸°ì  „ì§
   // EN: Forward in heading frame
   float rad = targetYaw * DEG_TO_RAD;
   float moved = 0.0f;
 
   while (moved < dM) {
-    float step = (moveSpeedSteps[speedLevel] * p) * 0.02f;  // KO: 50Hz ê¸°ì¤€ / EN: 50Hz base
+    float step = (moveSpeedSteps[speedLevel] * p) * 0.02f;  // KO: 50Hz ê¸°ì / EN: 50Hz base
     if (step < 0.001f) step = 0.001f;
 
     targetPosX += step * cosf(rad);
@@ -154,7 +154,7 @@ static inline void backwardCm(float cm, float pwr) {
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
   float dM = cm * 0.01f;
 
-  Serial.printf("[CMD] Backward %.1f cm (pwr=%.0f%%)\n", cm, pwr);
+  LOG_CMD_PRINTF("[CMD] Backward %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
   float rad = targetYaw * DEG_TO_RAD;
   float moved = 0.0f;
@@ -179,9 +179,9 @@ static inline void rightCm(float cm, float pwr) {
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
   float dM = cm * 0.01f;
 
-  Serial.printf("[CMD] Right %.1f cm (pwr=%.0f%%)\n", cm, pwr);
+  LOG_CMD_PRINTF("[CMD] Right %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
-  float rad = (targetYaw + 90.0f) * DEG_TO_RAD; // KO: ì˜¤ë¥¸ìª½ / EN: right
+  float rad = (targetYaw + 90.0f) * DEG_TO_RAD; // KO: ˜¤ë¥¸ìª½ / EN: right
   float moved = 0.0f;
 
   while (moved < dM) {
@@ -204,9 +204,9 @@ static inline void leftCm(float cm, float pwr) {
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
   float dM = cm * 0.01f;
 
-  Serial.printf("[CMD] Left %.1f cm (pwr=%.0f%%)\n", cm, pwr);
+  LOG_CMD_PRINTF("[CMD] Left %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
-  float rad = (targetYaw - 90.0f) * DEG_TO_RAD; // KO: ì™¼ìª½ / EN: left
+  float rad = (targetYaw - 90.0f) * DEG_TO_RAD; // KO: ™¼ìª / EN: left
   float moved = 0.0f;
 
   while (moved < dM) {
@@ -229,7 +229,7 @@ static inline void upCm(float cm, float pwr) {
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
   float dM = cm * 0.01f;
 
-  Serial.printf("[CMD] Up %.1f cm (pwr=%.0f%%)\n", cm, pwr);
+  LOG_CMD_PRINTF("[CMD] Up %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
   float startAlt = targetAltitude;
   while (targetAltitude < startAlt + dM) {
@@ -246,7 +246,7 @@ static inline void downCm(float cm, float pwr) {
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
   float dM = cm * 0.01f;
 
-  Serial.printf("[CMD] Down %.1f cm (pwr=%.0f%%)\n", cm, pwr);
+  LOG_CMD_PRINTF("[CMD] Down %.1f cm (pwr=%.0f%%)\n", cm, pwr);
 
   float startAlt = targetAltitude;
   while (targetAltitude > startAlt - dM) {
@@ -258,7 +258,7 @@ static inline void downCm(float cm, float pwr) {
 }
 
 // ============================================================================
-// KO: 3) íšŒì „
+// KO: 3) šŒ „
 // EN: 3) Rotation
 // ============================================================================
 static inline void turnAngle(float deg, float pwr) {
@@ -267,12 +267,12 @@ static inline void turnAngle(float deg, float pwr) {
 
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
 
-  Serial.printf("[CMD] TurnAngle %.1f deg (pwr=%.0f%%)\n", deg, pwr);
+  LOG_CMD_PRINTF("[CMD] TurnAngle %.1f deg (pwr=%.0f%%)\n", deg, pwr);
 
   float start = targetYaw;
   float goal  = start + deg;
 
-  // KO: ê°ë„ ë˜í•‘
+  // KO: ê°ë„ ˜•‘
   // EN: wrap
   while (goal > 180.0f) goal -= 360.0f;
   while (goal < -180.0f) goal += 360.0f;
@@ -282,7 +282,7 @@ static inline void turnAngle(float deg, float pwr) {
   while (fabsf(targetYaw - goal) > 1.0f) {
     targetYaw += dir * (yawSpeedSteps[speedLevel] * p) * 0.02f;
 
-    // KO: ê°ë„ ë˜í•‘
+    // KO: ê°ë„ ˜•‘
     // EN: wrap
     while (targetYaw > 180.0f) targetYaw -= 360.0f;
     while (targetYaw < -180.0f) targetYaw += 360.0f;
@@ -301,12 +301,12 @@ static inline void turnTime(float sec, float pwr) {
 
   float p = constrain(pwr, 1.0f, 100.0f) / 100.0f;
 
-  Serial.printf("[CMD] TurnTime %.2f sec (pwr=%.0f%%)\n", sec, pwr);
+  LOG_CMD_PRINTF("[CMD] TurnTime %.2f sec (pwr=%.0f%%)\n", sec, pwr);
 
   unsigned long ms = (unsigned long)(sec * 1000.0f);
   unsigned long start = millis();
 
-  // KO: ì§€ì • ì‹œê°„ ë™ì•ˆ í•œ ë°©í–¥ íšŒì „ ì˜ˆì‹œ
+  // KO: ì§ • ‹œê° ™•ˆ •œ ë°©í–¥ šŒ „ ˜ˆ‹œ
   // EN: Example: rotate in one direction for duration
   while (millis() - start < ms) {
     targetYaw += (yawSpeedSteps[speedLevel] * p) * 0.02f;

@@ -9,6 +9,8 @@ This document describes the AF1000X Flight Controller (FC) as a smart education 
 - External micro servo support
 - External LED support and AUX power output (for FPV camera)
 - Headless mode
+- 360-degree flip (roll/pitch)
+- Self-righting (turtle mode)
 - Safety cut off (emergency stop and failsafe)
 - Control mode 1 and 2 supported (default: mode 2)
 - DIY auto setup: hover learning + auto tuning
@@ -27,6 +29,22 @@ This document describes the AF1000X Flight Controller (FC) as a smart education 
 - AR1000X can trigger accessory actions via AUX1 commands.
 - LED step: cycles user LED color on each command.
 - Servo toggle: switches between min and max angle positions.
+
+## Flip (360-degree)
+- Trigger: short press on AR1000X GPIO13 enters flip-ready (LED2 blinks at 0.5 s).
+- Direction: choose within 3 s using right stick roll/pitch. If not selected, it returns to normal.
+- Conditions: altitude >= 1.5 m, battery >= 3.6 V, headless OFF.
+- During flip: tilt kill, attitude hold, and altitude hold are suspended; rate-based flip is executed.
+- After flip: returns to previous state and resumes normal control.
+
+## Self-righting (Turtle)
+- Trigger: in EMERGENCY (cutoff) mode, move left stick to throttle-low 3 times within 2 s.
+- Conditions: inverted detected (|roll| or |pitch| >= 120°), IMU OK, failsafe/flightLock OFF.
+- Action: rotates using the shorter axis (roll/pitch) to return upright; stops when upright or after 1.2 s.
+
+## Arming / Auto Takeoff
+- Arming requires level attitude: |roll| and |pitch| <= 6°, and not inverted.
+- Auto takeoff: if already armed, ascent starts immediately; otherwise it arms then waits 1 s before ascending.
 
 ## Power On Sequence
 1. Power on and wait 1 second.
@@ -53,12 +71,13 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 6. During POST, all LEDs turn ON and only failed sensors blink at 0.5 s steps. If any failure occurs, the status is held for 3 s.
 
 ## LED Rules (Runtime)
-1. Priority order: Boot Bind > Low Battery > Gyro Reset > Headless > Auto Tune > Normal.
+1. Priority order: Boot Bind > Low Battery > Gyro Reset > Flip Ready > Headless > Auto Tune > Normal.
 2. Low battery: all LEDs blink together (1 s ON / 1 s OFF).
 3. Gyro reset animation: all LEDs repeat 0.5 s ON / 1 s OFF for 3 cycles.
-4. Headless mode: LED3 LED4 blink 2 s ON / 1 s OFF, LED1 LED2 stay OFF.
-5. Auto tune: LED1 LED2 ON while LED3 LED4 OFF, then swap every 1.5 s.
-6. Normal state: LED1 to LED3 show sensor OK. LED4 is ON only if Flow is OK and Flow is enabled by AUX2.
+4. Flip ready: all LEDs blink together (0.5 s ON / 0.5 s OFF).
+5. Headless mode: LED1 LED2 stay ON, LED3 LED4 blink 2 s ON / 1 s OFF.
+6. Auto tune: LED1 LED2 ON while LED3 LED4 OFF, then swap every 1.5 s.
+7. Normal state: LED1 to LED3 show sensor OK. LED4 is ON only if Flow is OK and Flow is enabled by AUX2.
 
 ## Sensor Policy (POST)
 - Required sensors: IMU + BARO
@@ -153,6 +172,8 @@ See `IMG/README.md` for board images and mechanical details.
 - 외부 마이크로 서보 지원
 - 외부 LED 지원 및 AUX 전원 출력(FPV 카메라용)
 - 헤드리스 모드
+- 360도 공중회전(롤/피치)
+- 셀프 라이트(뒤집힘 복구)
 - 안전 차단(긴급 정지 및 페일세이프)
 - 조종 모드 1과 2 지원(기본값: 모드 2)
 - DIY 자동 설정: 호버 학습 + 자동 튜닝
@@ -171,6 +192,22 @@ See `IMG/README.md` for board images and mechanical details.
 - AR1000X는 AUX1 명령으로 액세서리 동작을 트리거할 수 있습니다.
 - LED 단계: 명령마다 사용자 LED 색상을 순환합니다.
 - 서보 토글: 최소/최대 각도 위치로 전환합니다.
+
+## 플립(360도)
+- 트리거: AR1000X GPIO13 짧게 누르면 플립 준비(LED2 0.5초 점멸).
+- 방향 선택: 우측 레버 롤/피치 방향을 3초 이내에 지정. 미지정 시 정상 복귀.
+- 조건: 고도 1.5 m 이상, 배터리 3.6 V 이상, 헤드리스 OFF.
+- 플립 중: 틸트킬/자세 홀드/고도 홀드를 일시 해제하고 각속도 기반으로 회전.
+- 완료 후: 이전 상태로 복귀하고 정상 제어를 재개합니다.
+
+## 셀프 라이트(뒤집힘 복구)
+- 트리거: EMERGENCY(컷 오프) 상태에서 왼쪽 레버 스로틀 하단을 2초 내 3회 입력.
+- 조건: 뒤집힘 감지(|roll| 또는 |pitch| >= 120°), IMU 정상, failsafe/flightLock OFF.
+- 동작: 롤/피치 중 복귀가 빠른 축으로 회전해 정자세 복귀, 정자세가 되거나 1.2초 후 종료.
+
+## 시동 / 자동이륙
+- 시동 조건: |roll|, |pitch| <= 6° 그리고 뒤집힘 아님.
+- 자동이륙: 이미 시동 상태면 즉시 상승, 아니면 시동 후 1초 대기 뒤 상승.
 
 ## 전원 켜짐 시퀀스
 1. 전원 인가 후 1초 대기.
@@ -197,12 +234,13 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 6. POST 동안 모든 LED ON, 실패 센서만 0.5초 간격 점멸. 실패가 있으면 상태를 3초 유지.
 
 ## LED 규칙(런타임)
-1. 우선순위: 부팅/바인딩 > 저전압 > 자이로 리셋 > 헤드리스 > 자동 튜닝 > 정상.
+1. 우선순위: 부팅/바인딩 > 저전압 > 자이로 리셋 > 플립 준비 > 헤드리스 > 자동 튜닝 > 정상.
 2. 저전압: 모든 LED가 동시에 점멸(1초 ON/1초 OFF).
 3. 자이로 리셋 애니메이션: 모든 LED가 0.5초 ON/1초 OFF를 3회 반복.
-4. 헤드리스 모드: LED3 LED4는 2초 ON/1초 OFF 점멸, LED1 LED2는 OFF.
-5. 자동 튜닝: LED1 LED2 ON, LED3 LED4 OFF로 시작해 1.5초마다 교대.
-6. 정상 상태: LED1~LED3는 센서 OK 표시. LED4는 Flow가 OK이고 AUX2로 Flow가 활성화된 경우에만 ON.
+4. 플립 준비: 모든 LED가 0.5초 ON/0.5초 OFF 점멸.
+5. 헤드리스 모드: LED1 LED2는 상시 ON, LED3 LED4는 2초 ON/1초 OFF 점멸.
+6. 자동 튜닝: LED1 LED2 ON, LED3 LED4 OFF로 시작해 1.5초마다 교대.
+7. 정상 상태: LED1~LED3는 센서 OK 표시. LED4는 Flow가 OK이고 AUX2로 Flow가 활성화된 경우에만 ON.
 
 ## 센서 정책(POST)
 - 필수 센서: IMU + BARO
@@ -297,6 +335,8 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 - 外部マイクロサーボ対応
 - 外部LED対応およびAUX電源出力(FPVカメラ用)
 - ヘッドレスモード
+- 360度フリップ(ロール/ピッチ)
+- セルフライト(転倒復帰)
 - セーフティカットオフ(緊急停止およびフェイルセーフ)
 - 操縦モード1と2に対応(デフォルト: モード2)
 - DIY自動セットアップ: ホバー学習 + 自動チューニング
@@ -315,6 +355,22 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 - AR1000XはAUX1コマンドでアクセサリ動作をトリガーできます。
 - LEDステップ: コマンドごとにユーザーLEDの色を循環します。
 - サーボトグル: 最小/最大角度位置を切り替えます。
+
+## フリップ(360度)
+- トリガー: AR1000X GPIO13を短押しするとフリップ準備(LED2が0.5秒点滅)。
+- 方向選択: 右スティックのロール/ピッチ方向を3秒以内に指定。未指定なら通常に復帰。
+- 条件: 高度1.5 m以上、バッテリー3.6 V以上、ヘッドレスOFF。
+- フリップ中: ティルトキル/姿勢ホールド/高度ホールドを一時停止し、角速度ベースで回転。
+- 完了後: 以前の状態に戻り、通常制御へ復帰。
+
+## セルフライト(転倒復帰)
+- トリガー: EMERGENCY(カットオフ)状態で左スロットルを2秒以内に3回下げる。
+- 条件: 反転検出(|roll|または|pitch| >= 120°)、IMU正常、failsafe/flightLock OFF。
+- 動作: ロール/ピッチの短い軸で回転して正立復帰、正立または1.2秒で停止。
+
+## アーミング / 自動離陸
+- アーミング条件: |roll|, |pitch| <= 6° かつ反転でないこと。
+- 自動離陸: 既にアーミング済みなら即上昇、未アーミングならアーミング後1秒待機。
 
 ## 電源オンシーケンス
 1. 電源オン後、1秒待機。
@@ -341,12 +397,13 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 6. POST中は全LED ON、失敗センサーのみ0.5秒間隔で点滅。失敗がある場合、状態を3秒保持。
 
 ## LEDルール(ランタイム)
-1. 優先順位: ブート/バインド > 低電圧 > ジャイロリセット > ヘッドレス > 自動チューニング > 通常。
+1. 優先順位: ブート/バインド > 低電圧 > ジャイロリセット > フリップ準備 > ヘッドレス > 自動チューニング > 通常。
 2. 低電圧: 全LEDが同時に点滅(1秒ON/1秒OFF)。
 3. ジャイロリセットアニメーション: 全LEDが0.5秒ON/1秒OFFを3サイクル繰り返し。
-4. ヘッドレスモード: LED3 LED4は2秒ON/1秒OFF点滅、LED1 LED2はOFF。
-5. 自動チューニング: LED1 LED2 ON、LED3 LED4 OFFで開始し、1.5秒ごとに交代。
-6. 通常状態: LED1〜LED3はセンサーOK表示。LED4はFlowがOKかつAUX2でFlowが有効な場合のみON。
+4. フリップ準備: 全LEDが0.5秒ON/0.5秒OFFで点滅。
+5. ヘッドレスモード: LED1 LED2は常時ON、LED3 LED4は2秒ON/1秒OFF点滅。
+6. 自動チューニング: LED1 LED2 ON、LED3 LED4 OFFで開始し、1.5秒ごとに交代。
+7. 通常状態: LED1〜LED3はセンサーOK表示。LED4はFlowがOKかつAUX2でFlowが有効な場合のみON。
 
 ## センサーポリシー(POST)
 - 必須センサー: IMU + BARO

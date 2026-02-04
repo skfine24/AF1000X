@@ -9,8 +9,18 @@
 #include <Preferences.h>
 #include <VL53L1X.h>
 #include "ICM45686.h"
+#ifdef __has_include
+#  if __has_include(<Adafruit_NeoPixel.h>)
+#    include <Adafruit_NeoPixel.h>
+#    define HAS_USER_NEOPIXEL 1
+#  else
+#    define HAS_USER_NEOPIXEL 0
+#  endif
+#else
+#  define HAS_USER_NEOPIXEL 0
+#endif
 
-// KO: GPIO / 핀 맵
+// KO: GPIO / 핀맵
 // EN: GPIO / pin map
 #include "AF1000X_GPIO.h"
 
@@ -18,12 +28,27 @@
 // EN: Flight tuning / PID constants
 #include "AF1000X_PID.h"
 
-// KO: 실제 루프 dt(초), 메인 루프에서 갱신
+// Serial log control (mute after POST if requested)
+static bool g_serialMuteAfterPost = false;
+#define LOG_PRINTF(...) do { if(!g_serialMuteAfterPost) Serial.printf(__VA_ARGS__); } while(0)
+#define LOG_PRINTLN(...) do { if(!g_serialMuteAfterPost) Serial.println(__VA_ARGS__); } while(0)
+#define LOG_PRINT(...) do { if(!g_serialMuteAfterPost) Serial.print(__VA_ARGS__); } while(0)
+#define LOG_IMU_PRINTF(...) do { Serial.printf(__VA_ARGS__); } while(0)
+#define LOG_CFG_PRINTF(...) do { Serial.printf(__VA_ARGS__); } while(0)
+#define LOG_CFG_PRINTLN(...) do { Serial.println(__VA_ARGS__); } while(0)
+#define LOG_CMD_PRINTF(...) do { Serial.printf(__VA_ARGS__); } while(0)
+#define LOG_CMD_PRINTLN(...) do { Serial.println(__VA_ARGS__); } while(0)
+#define LOG_CMD_PRINT(...) do { Serial.print(__VA_ARGS__); } while(0)
+
+
+
+
+// KO: 떎젣 猷⑦봽 dt(珥), 硫붿씤 猷⑦봽뿉꽌 媛깆떊
 // EN: Actual loop dt (seconds), updated in main loop
 extern float g_loopDt;
 
 
-// KO: Hover 학습 헤더
+// KO: Hover 븰뒿 뿤뜑
 // EN: Hover learning header
 #include "AF1000X_Hover.h"
 #include "AF1000X_AutoTune.h"
@@ -42,14 +67,14 @@ extern float g_loopDt;
 #include "AF1000X_BINDING.h"
 
 /* ============================================================================
- * KO: AF1000X 코어 (ESP32-S3)
+ * KO: AF1000X 肄붿뼱 (ESP32-S3)
  * EN: AF1000X core (ESP32-S3)
- * KO: 센서 POST, 고도 융합(ToF+SPL06), 옵티컬 플로우, 바인딩/호버/오토튠 포함
+ * KO: 꽱꽌 POST, 怨좊룄 쑖빀(ToF+SPL06), 샃떚而 뵆濡쒖슦, 諛붿씤뵫/샇踰/삤넗뒥 룷븿
  * EN: Sensor POST, altitude fusion (ToF+SPL06), optical flow, binding/hover/auto-tune
  * ========================================================================== */
 
 // ============================================================================
-// KO: 모드 상수 (u8)
+// KO: 紐⑤뱶 긽닔 (u8)
 // EN: Mode constants (u8)
 // ============================================================================
 static constexpr uint8_t MODE_READY     = 0;
@@ -65,13 +90,22 @@ static constexpr uint8_t MODE_EMERGENCY = 4;
 struct Signal {
   uint8_t throttle, roll, pitch, yaw, aux1, aux2;
   uint8_t speed; // KO: 1~3 / EN: 1~3
-  uint8_t hop;   // KO: FHSS 홉 인덱스 / EN: FHSS hop index
+  uint8_t hop;   // KO: FHSS 솄 씤뜳뒪 / EN: FHSS hop index
 };
 
-// KO: AUX2 비트 정의
+// KO: AUX2 bit 정의
 // EN: AUX2 bit definitions
 static const uint8_t AUX2_HEADLESS = 0x01;
 static const uint8_t AUX2_FLOW     = 0x02;
+static const uint8_t AUX2_FLIP_READY = 0x04;
+static const uint8_t AUX1_TAKEOFF = 1;
+static const uint8_t AUX1_GYRO_RESET = 2;
+static const uint8_t AUX1_SERVO_TOGGLE = 3;
+static const uint8_t AUX1_LED_STEP = 4;
+static const uint8_t AUX1_FLIP_ROLL_POS  = 5;
+static const uint8_t AUX1_FLIP_ROLL_NEG  = 6;
+static const uint8_t AUX1_FLIP_PITCH_POS = 7;
+static const uint8_t AUX1_FLIP_PITCH_NEG = 8;
 
 struct Telemetry {
   float vbat, alt, posX, posY;
@@ -79,18 +113,18 @@ struct Telemetry {
 };
 
 // ============================================================================
-// KO: 핀 정의 (AF1000X_GPIO.h로 이동)
+// KO:  젙쓽 (AF1000X_GPIO.h濡 씠룞)
 // EN: Pins (moved to AF1000X_GPIO.h)
 // ============================================================================
 
-// KO: FHSS 기본 테이블 (페어링으로 교체)
+// KO: FHSS 湲곕낯 뀒씠釉 (럹뼱留곸쑝濡 援먯껜)
 // EN: FHSS default table (replaced by pairing)
 static const uint8_t HOP_DEFAULT[HOP_MAX] = {63,64,65,66,67,68,69,70,71,72,73,74};
 static const uint32_t HOP_SLOT_MS = 20;
 static const uint32_t HOP_SCAN_MS = 20;
 
 // ============================================================================
-// KO: 전역 (Hover/EasyCommander에서 참조)
+// KO: 쟾뿭 (Hover/EasyCommander뿉꽌 李몄“)
 // EN: Globals (referenced by Hover/EasyCommander)
 // ============================================================================
 #ifdef AF1000X_IMPLEMENTATION
@@ -119,11 +153,11 @@ float currentRoll  = 0.0f;
 float currentPitch = 0.0f;
 
 
-// KO: 모드 (Hover 헤더는 uint8_t extern 기대)
+// KO: 紐⑤뱶 (Hover 뿤뜑뒗 uint8_t extern 湲곕)
 // EN: Mode (Hover header expects uint8_t extern)
 volatile uint8_t currentMode = MODE_READY;
 
-// KO: 타깃 / 상태 (meters)
+// KO: 源 / 긽깭 (meters)
 // EN: Targets / states (meters)
 float targetAltitude = TAKEOFF_TARGET_M;
 float currentAltitude = 0.0f;
@@ -141,13 +175,13 @@ float yawSpeedSteps[3]   = {YAW_SPEED_STEPS[0], YAW_SPEED_STEPS[1], YAW_SPEED_ST
 
 float trimRoll = 0.0f, trimPitch = 0.0f;
 
-// KO: 튜닝 게인 (NVS 로드, 기본값은 AF1000X_PID.h)
+// KO: 뒠떇 寃뚯씤 (NVS 濡쒕뱶, 湲곕낯媛믪 AF1000X_PID.h)
 // EN: Tunable gains (loaded from NVS, defaults from AF1000X_PID.h)
 float altKp = ALT_KP_DEFAULT;
 float altKd = ALT_KD_DEFAULT;
 float yawKp = YAW_KP_DEFAULT;
 
-// KO: 필터 파라미터 (NVS 로드, 기본값은 AF1000X_PID.h)
+// KO: 븘꽣 뙆씪誘명꽣 (NVS 濡쒕뱶, 湲곕낯媛믪 AF1000X_PID.h)
 // EN: Tunable filter parameters (loaded from NVS, defaults from AF1000X_PID.h)
 float attTau = ATT_TAU;
 float accZMin = ACC_Z_MIN;
@@ -156,25 +190,25 @@ float baroEmaA = BARO_EMA_A;
 float altEmaA = ALT_EMA_A;
 float tofJumpRejectM = TOF_JUMP_REJECT_M;
 
-// KO: 고도 제어 기반 PWM (Hover 학습이 자동 산출)
+// KO: 怨좊룄 젣뼱 湲곕컲 PWM (Hover 븰뒿씠 옄룞 궛異)
 // EN: Altitude control PWM (auto-learned by hover)
 int hoverThrottle = HOVER_PWM_DEFAULT;
 
-// KO: 배터리 상태 (1S LiPo)
+// KO: 諛고꽣由 긽깭 (1S LiPo)
 // EN: Battery state (1S LiPo)
-float batteryVoltage = 4.2f;      // KO: 1S 완충 전압 / EN: 1S full voltage
-float batteryVoltageFilt = 4.2f;  // KO: EMA 필터 / EN: EMA filtered
+float batteryVoltage = 4.2f;      // KO: 1S 셿異 쟾븬 / EN: 1S full voltage
+float batteryVoltageFilt = 4.2f;  // KO: EMA 븘꽣 / EN: EMA filtered
 bool batteryLowWarning = false;
 bool batteryCritical = false;
 
-// KO: 센서 OK/락
+// KO: 꽱꽌 OK/씫
 // EN: Sensor OK/lock
 bool ok_imu=false, ok_baro=false, ok_tof=false, ok_flow=false;
 bool flightLock = false;
 bool calibrated = false;
 bool flowUserEnabled = true;
 
-// KO: 모터 시동 / 아이들 스핀 상태
+// KO: 紐⑦꽣 떆룞 / 븘씠뱾 뒪 긽깭
 // EN: Motor arm / idle spin state
 bool motorArmedIdle = false;
 static bool armAwaitSecond = false;
@@ -186,9 +220,29 @@ static uint32_t armDisarmStartMs = 0;
 static bool autoTakeoffPending = false;
 static uint32_t autoTakeoffAtMs = 0;
 
-// KO: 고도 필터
+static bool flipActive = false;
+static uint8_t flipDir = 0;
+static float flipAngleDeg = 0.0f;
+static uint32_t flipStartMs = 0;
+static uint32_t flipCooldownUntil = 0;
+
+// EN: Self-righting (turtle mode) state
+static bool turtleActive = false;
+static uint8_t turtleAxis = 0;   // EN: 0=roll, 1=pitch
+static int8_t turtleDir = 0;     // EN: +1 or -1
+static uint32_t turtleStartMs = 0;
+static uint8_t turtleDownCount = 0;
+static uint32_t turtleFirstDownMs = 0;
+static bool turtleLowPrev = false;
+
+// EN: Self-righting (turtle mode) helper declarations
+static inline void turtleResetTrigger();
+
+// KO: 怨좊룄 븘꽣
 // EN: Altitude filters
 bool tofFiltInit=false;
+  uint8_t tofFailCount = 0;
+  static const uint8_t TOF_FAIL_LIMIT = 30;
 float tof_m_filt=0.0f;
 float tof_m_last_raw=0.0f;
 
@@ -215,6 +269,8 @@ static ICM456xx* IMU = nullptr;
 float gyroX_bias = 0.0f;
 float gyroY_bias = 0.0f;
 float gyroZ_bias = 0.0f;
+float gyroX_dps = 0.0f;
+float gyroY_dps = 0.0f;
 float yaw_internal = 0.0f;
 uint32_t lastYawUs = 0;
 
@@ -222,11 +278,28 @@ uint32_t lastYawUs = 0;
 // EN: Motors LEDC channels
 int ch1=-1,ch2=-1,ch3=-1,ch4=-1;
 
-// KO: 기압계 기준값
+// EN: User servo PWM settings
+static const uint32_t SERVO_FREQ = 50;
+static const uint8_t SERVO_RES = 16;
+static const int SERVO_MIN_US = 900;
+static const int SERVO_MAX_US = 2000;
+static const int SERVO_ANGLE_MIN = 0;
+static const int SERVO_ANGLE_MAX = 180;
+int chServo = -1;
+int servoAngle = 0;
+
+// EN: User LED color index (0..4)
+uint8_t userLedIndex = 0;
+
+#if HAS_USER_NEOPIXEL
+Adafruit_NeoPixel userPixel(1, PIN_USER_LED, NEO_GRB + NEO_KHZ800);
+#endif
+
+// KO: 湲곗븬怨 湲곗媛
 // EN: Baro baseline
 float basePressurePa = 101325.0f;
 
-// KO: 플로우 캘리브레이션 상태
+// KO: 뵆濡쒖슦 罹섎━釉뚮젅씠뀡 긽깭
 // EN: Flow calibration state
 enum FlowCalState : uint8_t { FC_IDLE, FC_TAKE_HOVER, FC_FORWARD, FC_PAUSE1, FC_BACK, FC_PAUSE2, FC_DONE, FC_ABORT };
 FlowCalState flowCal = FC_IDLE;
@@ -272,6 +345,7 @@ extern bool flightLock;
 extern bool calibrated;
 
 extern bool tofFiltInit;
+  extern uint8_t tofFailCount;
 extern float tof_m_filt, tof_m_last_raw;
 extern bool baroInit;
 extern float baro_alt_m_filt;
@@ -282,9 +356,21 @@ extern float flowK;
 extern VL53L1X tof;
 
 extern float gyroX_bias, gyroY_bias, gyroZ_bias, yaw_internal;
+extern float gyroX_dps, gyroY_dps;
+extern bool flipActive;
+extern uint8_t flipDir;
+extern float flipAngleDeg;
+extern uint32_t flipStartMs;
+extern uint32_t flipCooldownUntil;
 extern uint32_t lastYawUs;
 
 extern int ch1,ch2,ch3,ch4;
+extern int chServo;
+extern int servoAngle;
+extern uint8_t userLedIndex;
+#if HAS_USER_NEOPIXEL
+extern Adafruit_NeoPixel userPixel;
+#endif
 
 extern float basePressurePa;
 
@@ -300,7 +386,7 @@ extern bool flowCal_reported;
 #endif
 
 // ============================================================================
-// KO: 헬퍼
+// KO: 뿬띁
 // EN: Helpers
 // ============================================================================
 static inline float clampf(float v,float lo,float hi){ return (v<lo)?lo:((v>hi)?hi:v); }
@@ -309,8 +395,8 @@ static inline void ledsInit(){
   pinMode(PIN_LED_BARO, OUTPUT);
   pinMode(PIN_LED_TOF, OUTPUT);
   pinMode(PIN_LED_FLOW, OUTPUT);
-  digitalWrite(PIN_LED_IMU, LOW);
-  digitalWrite(PIN_LED_BARO, LOW);
+  digitalWrite(PIN_LED_IMU,  HIGH);
+  digitalWrite(PIN_LED_BARO, HIGH);
   digitalWrite(PIN_LED_TOF, LOW);
   digitalWrite(PIN_LED_FLOW, LOW);
 }
@@ -333,24 +419,101 @@ static inline void ledFailPattern(){
   }
 }
 
+// KO: POST 寃곌낵 몴떆(쟾泥 ON + 떎뙣 꽱꽌留 0.5珥 떒쐞 젏硫)
+// EN: POST status display (all ON + failed sensors blink at 0.5s steps)
+static inline void ledPostStatusDelay(bool imu_ok, bool baro_ok, bool tof_ok, bool flow_ok, uint32_t duration_ms){
+  uint32_t start = millis();
+  while((uint32_t)(millis() - start) < duration_ms){
+    bool blink = ((millis() / 500) % 2) == 0; // KO: 0.5s 넗湲 / EN: toggle every 0.5s
+    digitalWrite(PIN_LED_IMU,  imu_ok  ? HIGH : (blink ? HIGH : LOW));
+    digitalWrite(PIN_LED_BARO, baro_ok ? HIGH : (blink ? HIGH : LOW));
+    digitalWrite(PIN_LED_TOF,  tof_ok  ? HIGH : (blink ? HIGH : LOW));
+    digitalWrite(PIN_LED_FLOW, flow_ok ? HIGH : (blink ? HIGH : LOW));
+    delay(10);
+  }
+}
+
+// EN: User LED (single-wire RGB/NeoPixel) helpers
+static inline void userLedWrite(uint8_t idx){
+  userLedIndex = idx % 5;
+  uint8_t r = 0, g = 0, b = 0;
+  switch(userLedIndex){
+    case 0: r = 255; g = 0;   b = 0;   break; // red
+    case 1: r = 255; g = 160; b = 0;   break; // yellow
+    case 2: r = 0;   g = 255; b = 0;   break; // green
+    case 3: r = 0;   g = 0;   b = 255; break; // blue
+    case 4: r = 160; g = 0;   b = 255; break; // purple
+  }
+#if defined(ARDUINO_ARCH_ESP32)
+  #if HAS_USER_NEOPIXEL
+  userPixel.setPixelColor(0, userPixel.Color(r, g, b));
+  userPixel.show();
+  #else
+  digitalWrite(PIN_USER_LED, (r || g || b) ? HIGH : LOW);
+  #endif
+#else
+  digitalWrite(PIN_USER_LED, (r || g || b) ? HIGH : LOW);
+#endif
+}
+
+static inline void userLedInit(){
+  pinMode(PIN_USER_LED, OUTPUT);
+#if HAS_USER_NEOPIXEL
+  userPixel.begin();
+  userPixel.show();
+#endif
+  userLedWrite(0);
+}
+
+static inline void userLedStep(){
+  userLedWrite((uint8_t)(userLedIndex + 1));
+}
+
+// EN: User servo helpers (PWM 50Hz, 900-2000us)
+static inline uint32_t servoUsToDuty(uint32_t us){
+  const uint32_t maxDuty = (1u << SERVO_RES) - 1u;
+  uint32_t duty = (uint32_t)((uint64_t)us * maxDuty * SERVO_FREQ / 1000000ull);
+  if(duty > maxDuty) duty = maxDuty;
+  return duty;
+}
+
+static inline void userServoWriteAngle(int angle){
+  if(chServo < 0) return;
+  angle = constrain(angle, SERVO_ANGLE_MIN, SERVO_ANGLE_MAX);
+  servoAngle = angle;
+  uint32_t us = (uint32_t)map(angle, SERVO_ANGLE_MIN, SERVO_ANGLE_MAX, SERVO_MIN_US, SERVO_MAX_US);
+  ledcWrite(chServo, servoUsToDuty(us));
+}
+
+static inline void userServoInit(){
+  chServo = ledcAttach(PIN_SERVO, SERVO_FREQ, SERVO_RES);
+  userServoWriteAngle(SERVO_ANGLE_MIN);
+}
+
+static inline void userServoToggle(){
+  int next = (servoAngle <= (SERVO_ANGLE_MIN + SERVO_ANGLE_MAX) / 2) ? SERVO_ANGLE_MAX : SERVO_ANGLE_MIN;
+  userServoWriteAngle(next);
+}
+
 // ============================================================================
-// KO: LED 상태 머신 (부팅/바인딩/저전압/자이로/헤드리스/오토튠)
-// EN: LED state machine (boot/bind/low batt/gyro/headless/auto-tune)
-// KO: 부팅/바인딩 시퀀스는 최우선, 이후 저전압/자이로/헤드리스/오토튠 순
-// EN: Boot/bind has top priority; then low battery, gyro, headless, auto-tune
+// KO: LED 규칙 (부팅/바인딩/저전압/자이로 리셋/플립 준비/헤드리스/자동 튜닝/정상)
+// EN: LED state machine (boot/bind/low batt/gyro/flip ready/headless/auto-tune)
+// KO: 우선순위: 부팅/바인딩 > 저전압 > 자이로 리셋 > 플립 준비 > 헤드리스 > 자동 튜닝 > 정상
+// EN: Boot/bind has top priority; then low battery, gyro, flip ready, headless, auto-tune
 // ============================================================================
 
 static bool g_ledInvertedAtBoot = false;
 
 static bool g_ledLowBattery = false;
 static bool g_ledHeadless   = false;
+static bool g_ledFlipReady  = false;
 static bool g_ledBound      = false;
 static bool g_ledAutoTune   = false;
 
-// KO: 자이로 리셋 애니메이션 (논블로킹)
+// KO: 옄씠濡 由ъ뀑 븷땲硫붿씠뀡 (끉釉붾줈궧)
 // EN: Gyro reset animation (non-blocking)
 static bool     s_ledGyroAnimActive = false;
-static uint8_t  s_ledGyroAnimCount  = 0;   // KO: ON 단계 완료 횟수 / EN: ON phases completed
+static uint8_t  s_ledGyroAnimCount  = 0;   // KO: ON 떒怨 셿猷 슏닔 / EN: ON phases completed
 static bool     s_ledGyroAnimOn     = false;
 static uint32_t s_ledGyroNextMs     = 0;
 
@@ -361,7 +524,7 @@ static inline void ledStartGyroResetAnim(){
   s_ledGyroNextMs     = millis();
 }
 
-// KO: 부팅/바인딩 시퀀스
+// KO: 遺똿/諛붿씤뵫 떆뒪
 // EN: Boot/binding sequence
 enum LedBootState : uint8_t {
   LED_BOOT_BLINK_ALL = 0,
@@ -386,7 +549,7 @@ static inline void _ledOneHot(uint8_t idx){
   digitalWrite(PIN_LED_FLOW, idx==3 ? HIGH : LOW);
 }
 
-// KO: 초기화 시 1회 호출 (IMU 체크 후 inverted 플래그 유효)
+// KO: 珥덇린솕 떆 1쉶 샇異 (IMU 泥댄겕 썑 inverted 뵆옒洹 쑀슚)
 // EN: Call once during init (after IMU check so inverted flag is valid)
 static inline void ledBootBegin(bool invertedAtBoot){
   g_ledInvertedAtBoot = invertedAtBoot;
@@ -395,12 +558,12 @@ static inline void ledBootBegin(bool invertedAtBoot){
   s_ledBootState = invertedAtBoot ? LED_BOOT_CHASE_INVERTED : LED_BOOT_BLINK_ALL;
 }
 
-// KO: 내부 부팅/바인딩 업데이트 (이 tick에서 LED 처리 시 true)
+// KO: 궡遺 遺똿/諛붿씤뵫 뾽뜲씠듃 (씠 tick뿉꽌 LED 泥섎━ 떆 true)
 // EN: Internal boot/bind updater (returns true if it handled LEDs this tick)
 static inline bool ledBootTick(){
   uint32_t now = millis();
 
-  // KO: 바인딩 상승 에지 감지
+  // KO: 諛붿씤뵫 긽듅 뿉吏 媛먯
   // EN: Detect rising edge: not bound -> bound
   if (!s_ledPrevBound && g_ledBound) {
     s_ledBootState = LED_BOOT_BOUND_SOLID;
@@ -424,7 +587,7 @@ static inline bool ledBootTick(){
     return true;
   }
 
-  // KO: 뒤집힘 체이스 (200ms 스텝)
+  // KO: 뮘吏묓옒 泥댁씠뒪 (200ms 뒪뀦)
   // EN: inverted chase (200ms step)
   if (s_ledBootState == LED_BOOT_CHASE_INVERTED) {
     uint8_t step = (uint8_t)((now / 200) % 4);
@@ -434,16 +597,16 @@ static inline bool ledBootTick(){
   return false;
 }
 
-// KO: 메인 LED 업데이트 (매 루프 호출)
+// KO: 硫붿씤 LED 뾽뜲씠듃 (留 猷⑦봽 샇異)
 // EN: Main LED update (call every loop)
 static inline void ledTick(){
   uint32_t now = millis();
 
-  // KO: 0) 부팅/바인딩 우선
+  // KO: 0) 遺똿/諛붿씤뵫 슦꽑
   // EN: 0) Boot/bind sequence has top priority
   if (ledBootTick()) return;
 
-  // KO: A) 저전압
+  // KO: A) 쟾븬
   // EN: A) Low battery
   if (g_ledLowBattery) {
     bool on = _blink(now, 1000, 1000); // KO: 1s on / 1s off / EN: 1s on / 1s off
@@ -451,7 +614,7 @@ static inline void ledTick(){
     return;
   }
 
-  // KO: B) 자이로 리셋 애니메이션
+  // KO: B) 옄씠濡 由ъ뀑 븷땲硫붿씠뀡
   // EN: B) Gyro reset animation
   if (s_ledGyroAnimActive) {
     if (now >= s_ledGyroNextMs) {
@@ -471,19 +634,27 @@ static inline void ledTick(){
     return;
   }
 
-  // KO: C) 헤드리스 (LED3/4 2s on / 1s off)
-  // EN: C) Headless (LED3/4 2s on / 1s off)
+  // KO: C) 플립 준비: 모든 LED가 0.5초 ON/0.5초 OFF 점멸.
+  // EN: C) Flip ready (all LEDs 0.5s on / 0.5s off)
+  if (g_ledFlipReady) {
+    bool on = _blink(now, 500, 500);
+    ledAll(on);
+    return;
+  }
+
+  // KO: D) 헤드리스 모드: LED1 LED2는 상시 ON, LED3 LED4는 2초 ON/1초 OFF 점멸.
+  // EN: D) Headless (LED1/2 ON, LED3/4 2s on / 1s off)
   if (g_ledHeadless) {
     bool on34 = (now % 3000) < 2000;
-    digitalWrite(PIN_LED_IMU,  LOW);
-    digitalWrite(PIN_LED_BARO, LOW);
+    digitalWrite(PIN_LED_IMU,  HIGH);
+    digitalWrite(PIN_LED_BARO, HIGH);
     digitalWrite(PIN_LED_TOF,  on34 ? HIGH : LOW);
     digitalWrite(PIN_LED_FLOW, on34 ? HIGH : LOW);
     return;
   }
 
-  // KO: D) 오토튠 (LED1/2 on, LED3/4 off 1.5s 교대)
-  // EN: D) Auto tune (LED1/2 on, LED3/4 off 1.5s swap)
+  // KO: E) 자동 튜닝: LED1 LED2 ON, LED3 LED4 OFF로 시작해 1.5초마다 교대.
+  // EN: E) Auto tune (LED1/2 on, LED3/4 off, swap every 1.5s)
   if (g_ledAutoTune) {
     bool phase = ((now / 1500) % 2) == 0;
     digitalWrite(PIN_LED_IMU,  phase ? HIGH : LOW);
@@ -493,8 +664,8 @@ static inline void ledTick(){
     return;
   }
 
-  // KO: E) 일반 상태 (기존 센서 LED 유지)
-  // EN: E) Normal (keep existing sensor LED logic)
+  // KO: F) 정상 상태: LED1~LED3는 센서 OK 표시. LED4는 Flow가 OK이고 AUX2로 Flow가 활성화된 경우에만 ON.
+  // EN: F) Normal (keep existing sensor LED logic)
 }
 
 static inline float readBatteryVoltage(){
@@ -508,22 +679,22 @@ static inline float readBatteryVoltage(){
   return vbat;
 }
 
-// KO: 배터리 체크
+// KO: 諛고꽣由 泥댄겕
 // EN: Battery check
 static inline void checkBattery(){
   batteryVoltage = readBatteryVoltage();
 
-  // KO: EMA 로우패스 (지터 방지)
+  // KO: EMA 濡쒖슦뙣뒪 (吏꽣 諛⑹)
   // EN: EMA low-pass to prevent jitter
-  const float alpha = 0.20f; // KO: 0..1 (클수록 빠름) / EN: 0..1 (higher=faster)
+  const float alpha = 0.20f; // KO: 0..1 (겢닔濡 鍮좊쫫) / EN: 0..1 (higher=faster)
   batteryVoltageFilt = batteryVoltageFilt + alpha * (batteryVoltage - batteryVoltageFilt);
 
   if(batteryVoltageFilt < BATTERY_MIN_VOLTAGE){
     if(!batteryCritical){
       batteryCritical = true;
-      Serial.printf("⚠️ CRITICAL: Battery %.2fV - Emergency landing!\n", batteryVoltageFilt);
+      LOG_PRINTF("슑截 CRITICAL: Battery %.2fV - Emergency landing!\n", batteryVoltageFilt);
     }
-    // KO: 비행 중이면 강제 착륙
+    // KO: 鍮꾪뻾 以묒씠硫 媛뺤젣 李⑸쪠
     // EN: Force landing if in flight
     if(currentMode == MODE_HOVERING || currentMode == MODE_TAKEOFF){
       currentMode = MODE_LANDING;
@@ -531,7 +702,7 @@ static inline void checkBattery(){
   } else if(batteryVoltageFilt < BATTERY_WARNING_VOLTAGE){
     if(!batteryLowWarning){
       batteryLowWarning = true;
-      Serial.printf("⚠️ WARNING: Battery low %.2fV\n", batteryVoltageFilt);
+      LOG_PRINTF("슑截 WARNING: Battery low %.2fV\n", batteryVoltageFilt);
     }
   } else {
     batteryLowWarning = false;
@@ -542,29 +713,29 @@ static inline void checkBattery(){
 
 
 // ============================================================================
-// KO: 바인딩 LED 훅 (AF1000X_BINDING.h 사용)
+// KO: 諛붿씤뵫 LED 썒 (AF1000X_BINDING.h 궗슜)
 // EN: Binding LED hooks (used by AF1000X_BINDING.h)
-// KO: 실제 패턴은 ledTick()/ledBootBegin()/g_ledBound로 제어
+// KO: 떎젣 뙣꽩 ledTick()/ledBootBegin()/g_ledBound濡 젣뼱
 // EN: Actual patterns controlled by ledTick()/ledBootBegin()/g_ledBound
 // ============================================================================
 inline void binding_ledAll(bool on) { ledAll(on); }
 
-// KO: 페어링/바인딩 대기 중 반복 호출
+// KO: 럹뼱留/諛붿씤뵫 湲 以 諛섎났 샇異
 // EN: Called repeatedly while waiting for pairing/binding
 inline void binding_ledPairingTick() {
   ledTick();
 }
 
-// KO: 바인딩 완료 시 1회 호출
+// KO: 諛붿씤뵫 셿猷 떆 1쉶 샇異
 // EN: Called once when binding completes
 inline void binding_ledBoundOnce() {
   ledAll(true);
 }
 
-// KO: 바인딩 에러 시 호출
+// KO: 諛붿씤뵫 뿉윭 떆 샇異
 // EN: Called on binding error
 inline void binding_ledErrorOnce() {
-  // KO: 짧은 에러 플래시
+  // KO: 吏㏃ 뿉윭 뵆옒떆
   // EN: quick error flash
   for(int i=0;i<3;i++){ ledAll(true); delay(120); ledAll(false); delay(120); }
 }
@@ -599,7 +770,11 @@ static inline void motorsIdle(int pwm){
   ledcWrite(ch4, v);
 }
 static inline void motorControl(int thr, float r, float p, float ycmd){
-  if(currentMode==MODE_READY || currentMode==MODE_EMERGENCY){ motorsOff(); return; }
+  // EN: In READY/EMERGENCY, keep motors off unless turtle mode is active
+  if((currentMode==MODE_READY || currentMode==MODE_EMERGENCY) && !turtleActive){
+    motorsOff();
+    return;
+  }
 
   float fr = r + trimRoll;
   float fp = p + trimPitch;
@@ -718,7 +893,7 @@ static inline void updateRadio(){
     hopSynced = false;
     if(currentMode != MODE_READY && currentMode != MODE_EMERGENCY){
 
-      // KO: 페일세이프 시 현재 위치/요 유지 후 착륙
+      // KO: 럹씪꽭씠봽 떆 쁽옱 쐞移/슂 쑀吏 썑 李⑸쪠
       // EN: On failsafe, hold current pos/yaw then land
       targetPosX = currentPosX;
       targetPosY = currentPosY;
@@ -730,7 +905,7 @@ static inline void updateRadio(){
 }
 
 // ============================================================================
-// KO: IMU (ICM45686) 요 적분
+// KO: IMU (ICM45686) 슂 쟻遺
 // EN: IMU (ICM45686) yaw integration
 // ============================================================================
 static inline float safeDt(float dt){ return (dt<=0.0f || dt>0.1f) ? 0.0f : dt; }
@@ -799,13 +974,15 @@ static inline void imu_updateYaw(){
   float gx = (float)d.gyro_data[0] - gyroX_bias;
   float gy = (float)d.gyro_data[1] - gyroY_bias;
   float gz = (float)d.gyro_data[2] - gyroZ_bias;
+  gyroX_dps = gx;
+  gyroY_dps = gy;
 
-  // KO: 롤/피치 상보 필터 (자이로 + 가속도)
+  // KO: 濡/뵾移 긽蹂 븘꽣 (옄씠濡 + 媛냽룄)
   // EN: Complementary filter for roll/pitch (gyro + accel)
   float accRoll = currentRoll;
   float accPitch = currentPitch;
   if (fabsf(az) >= accZMin) {
-    // KO: 단위/스케일이 거칠어도 뒤집힘 감지에는 충분
+    // KO: 떒쐞/뒪耳씪씠 嫄곗튌뼱룄 뮘吏묓옒 媛먯뿉뒗 異⑸텇
     // EN: Scale need not be perfect for inverted detection
     accRoll  = atan2f(ay, az) * 57.2957795f;
     accPitch = atan2f(-ax, sqrtf(ay*ay + az*az)) * 57.2957795f;
@@ -829,7 +1006,7 @@ static inline void yawReset(){
 }
 
 // ============================================================================
-// KO: SPL06 최소 드라이버 (I2C -> 압력 -> 고도)
+// KO: SPL06 理쒖냼 뱶씪씠踰 (I2C -> 븬젰 -> 怨좊룄)
 // EN: SPL06 minimal driver (I2C -> pressure -> altitude)
 // ============================================================================
 static uint8_t  spl_addr = 0;
@@ -964,7 +1141,7 @@ static inline bool tof_read_m(float &out){
 }
 
 // ============================================================================
-// KO: PMW3901 최소 드라이버 (SPI 옵티컬 플로우)
+// KO: PMW3901 理쒖냼 뱶씪씠踰 (SPI 샃떚而 뵆濡쒖슦)
 // EN: PMW3901 minimal (SPI) optical flow
 // ============================================================================
 static uint8_t pmw_read(uint8_t reg){
@@ -1043,23 +1220,32 @@ static inline PMWData pmw_burst(){
 }
 
 // ============================================================================
-// KO: 고도 융합 (ToF + Baro)
+// KO: 怨좊룄 쑖빀 (ToF + Baro)
 // EN: Altitude fusion (ToF + Baro)
 // ============================================================================
 static inline void updateAltitudeFusion(){
   float tofNew;
-  if(ok_tof && tof_read_m(tofNew)){
-    if(!tofFiltInit){
-      tof_m_filt = tofNew;
-      tof_m_last_raw = tofNew;
-      tofFiltInit = true;
-    } else {
-      if(fabsf(tofNew - tof_m_last_raw) > tofJumpRejectM){
-        // KO: 급변 reject
-        // EN: reject sudden jump
-      } else {
-        tof_m_filt += tofEmaA * (tofNew - tof_m_filt);
+  if(ok_tof){
+    if(tof_read_m(tofNew)){
+      tofFailCount = 0;
+      if(!tofFiltInit){
+        tof_m_filt = tofNew;
         tof_m_last_raw = tofNew;
+        tofFiltInit = true;
+      } else {
+        if(fabsf(tofNew - tof_m_last_raw) > tofJumpRejectM){
+          // KO: 급격한 점프 거부
+          // EN: reject sudden jump
+        } else {
+          tof_m_filt += tofEmaA * (tofNew - tof_m_filt);
+          tof_m_last_raw = tofNew;
+        }
+      }
+    } else {
+      if(tofFailCount < 255) tofFailCount++;
+      if(tofFailCount >= TOF_FAIL_LIMIT){
+        ok_tof = false;
+        tofFiltInit = false;
       }
     }
   }
@@ -1103,7 +1289,7 @@ static inline void updateAltitudeFusion(){
 }
 
 // ============================================================================
-// KO: 플로우 + 요 회전으로 위치 추정
+// KO: 뵆濡쒖슦 + 슂 쉶쟾쑝濡 쐞移 異붿젙
 // EN: Position from flow + yaw rotation
 // ============================================================================
 static inline void updatePositionFromFlow(){
@@ -1112,7 +1298,7 @@ static inline void updatePositionFromFlow(){
   PMWData f = pmw_burst();
   if(!f.valid || f.squal < FLOW_SQUAL_MIN) return;
 
-  // KO: 플로우 캘리브레이션 누적
+  // KO: 뵆濡쒖슦 罹섎━釉뚮젅씠뀡 늻쟻
   // EN: Flow calibration accumulation
   if(flowCal == FC_FORWARD || flowCal == FC_BACK){
     if(currentAltitude > 0.20f){
@@ -1129,7 +1315,7 @@ static inline void updatePositionFromFlow(){
   float dX_body = (float)f.dx * flowK * h;
   float dY_body = (float)f.dy * flowK * h;
 
-  // KO: 롤/피치 기반 틸트 보정 (1m 근처에서만)
+  // KO: 濡/뵾移 湲곕컲 떥듃 蹂댁젙 (1m 洹쇱쿂뿉꽌留)
   // EN: Tilt compensation using roll/pitch estimate (only near 1m)
   if(fabsf(currentAltitude - FLOW_TILT_COMP_ALT_M) <= FLOW_TILT_COMP_WINDOW_M){
     float rollRad = currentRoll * DEG_TO_RAD;
@@ -1156,12 +1342,12 @@ static inline void updatePositionFromFlow(){
 }
 
 // ============================================================================
-// KO: 플로우 자동 캘리브레이션
+// KO: 뵆濡쒖슦 옄룞 罹섎━釉뚮젅씠뀡
 // EN: Flow auto calibration
 // ============================================================================
 static inline void startFlowAutoCal(float dist_m, float hoverAlt_m, float pwr){
   if(currentMode != MODE_READY){
-    Serial.println("FLOW CAL: must be in READY mode.");
+    LOG_CMD_PRINTLN("FLOW CAL: must be in READY mode.");
     return;
   }
 
@@ -1180,7 +1366,7 @@ static inline void startFlowAutoCal(float dist_m, float hoverAlt_m, float pwr){
 
   hover_startLearn();
 
-  Serial.printf("FLOW CAL START: dist=%.2fm hover=%.2fm pwr=%.0f%%\n", dist_m, hoverAlt_m, pwr);
+  LOG_CMD_PRINTF("FLOW CAL START: dist=%.2fm hover=%.2fm pwr=%.0f%%\n", dist_m, hoverAlt_m, pwr);
 }
 
 static inline void flowCalTick(){
@@ -1193,12 +1379,12 @@ static inline void flowCalTick(){
         if(fabsf(currentAltitude - flowCal_hoverAlt_m) < 0.10f){
           flowCal = FC_FORWARD;
           flowCal_t0 = millis();
-          Serial.println("FLOW CAL: hovering stable -> forward");
+          LOG_CMD_PRINTLN("FLOW CAL: hovering stable -> forward");
         }
       }
       if((millis() - flowCal_t0) > 15000){
         flowCal = FC_ABORT;
-        Serial.println("FLOW CAL: ABORT (timeout hover)");
+        LOG_CMD_PRINTLN("FLOW CAL: ABORT (timeout hover)");
       }
     } break;
 
@@ -1235,14 +1421,14 @@ static inline void flowCalTick(){
       if(millis() - flowCal_t0 > 500){
         if(flowCal_samples < 50 || flowCal_height_n < 50){
           flowCal = FC_ABORT;
-          Serial.println("FLOW CAL: ABORT (not enough samples)");
+          LOG_CMD_PRINTLN("FLOW CAL: ABORT (not enough samples)");
           break;
         }
         float avgH = flowCal_height_acc / (float)flowCal_height_n;
         float counts = (float)abs(flowCal_sum_dx);
         if(avgH < 0.10f || counts < 5.0f){
           flowCal = FC_ABORT;
-          Serial.println("FLOW CAL: ABORT (bad data)");
+          LOG_CMD_PRINTLN("FLOW CAL: ABORT (bad data)");
           break;
         }
 
@@ -1251,7 +1437,7 @@ static inline void flowCalTick(){
         prefs.putFloat("flowK", flowK);
 
         flowCal = FC_DONE;
-        Serial.println("FLOW CAL: DONE");
+        LOG_CMD_PRINTLN("FLOW CAL: DONE");
       }
     } break;
 
@@ -1261,46 +1447,46 @@ static inline void flowCalTick(){
   if(flowCal == FC_DONE && !flowCal_reported){
     flowCal_reported = true;
     float avgH = (flowCal_height_n ? flowCal_height_acc/(float)flowCal_height_n : 0.0f);
-    Serial.printf("FLOW CAL RESULT: avgH=%.2fm dxCounts=%ld flowK=%.6f (saved)\n",
+    LOG_CMD_PRINTF("FLOW CAL RESULT: avgH=%.2fm dxCounts=%ld flowK=%.6f (saved)\n",
                   avgH, (long)flowCal_sum_dx, flowK);
-    Serial.println("If measured actual distance, send: D60.0  (cm)");
+    LOG_CMD_PRINTLN("If measured actual distance, send: D60.0  (cm)");
   }
 }
 
 // ============================================================================
-// KO: 튜닝 덤프 헬퍼 (Serial)
+// KO: 뒠떇 뜡봽 뿬띁 (Serial)
 // EN: Tuning dump helpers (Serial)
 // ============================================================================
 static inline void printTuning(bool asPidDefaults){
   if(asPidDefaults){
-    Serial.println("---- PID.h defaults (copy) ----");
-    Serial.printf("static const float ALT_KP_DEFAULT = %.4ff;\n", altKp);
-    Serial.printf("static const float ALT_KD_DEFAULT = %.4ff;\n", altKd);
-    Serial.printf("static const float YAW_KP_DEFAULT = %.4ff;\n", yawKp);
-    Serial.printf("static const float FLOW_K_DEFAULT = %.6ff;\n", flowK);
-    Serial.printf("static const int   HOVER_PWM_DEFAULT = %d;\n", hoverThrottle);
-    Serial.printf("static const float ATT_TAU = %.3ff;\n", attTau);
-    Serial.printf("static const float ACC_Z_MIN = %.3ff;\n", accZMin);
-    Serial.printf("static const float TOF_EMA_A = %.3ff;\n", tofEmaA);
-    Serial.printf("static const float BARO_EMA_A = %.3ff;\n", baroEmaA);
-    Serial.printf("static const float ALT_EMA_A = %.3ff;\n", altEmaA);
-    Serial.printf("static const float TOF_JUMP_REJECT_M = %.3ff;\n", tofJumpRejectM);
-    Serial.println("---- end ----");
+    LOG_CFG_PRINTLN("---- PID.h defaults (copy) ----");
+    LOG_CFG_PRINTF("static const float ALT_KP_DEFAULT = %.4ff;\n", altKp);
+    LOG_CFG_PRINTF("static const float ALT_KD_DEFAULT = %.4ff;\n", altKd);
+    LOG_CFG_PRINTF("static const float YAW_KP_DEFAULT = %.4ff;\n", yawKp);
+    LOG_CFG_PRINTF("static const float FLOW_K_DEFAULT = %.6ff;\n", flowK);
+    LOG_CFG_PRINTF("static const int   HOVER_PWM_DEFAULT = %d;\n", hoverThrottle);
+    LOG_CFG_PRINTF("static const float ATT_TAU = %.3ff;\n", attTau);
+    LOG_CFG_PRINTF("static const float ACC_Z_MIN = %.3ff;\n", accZMin);
+    LOG_CFG_PRINTF("static const float TOF_EMA_A = %.3ff;\n", tofEmaA);
+    LOG_CFG_PRINTF("static const float BARO_EMA_A = %.3ff;\n", baroEmaA);
+    LOG_CFG_PRINTF("static const float ALT_EMA_A = %.3ff;\n", altEmaA);
+    LOG_CFG_PRINTF("static const float TOF_JUMP_REJECT_M = %.3ff;\n", tofJumpRejectM);
+    LOG_CFG_PRINTLN("---- end ----");
     return;
   }
 
-  Serial.println("---- Tuning dump ----");
-  Serial.printf("ALT_KP=%.4f ALT_KD=%.4f YAW_KP=%.4f\n", altKp, altKd, yawKp);
-  Serial.printf("FLOW_K=%.6f HOVER_PWM=%d\n", flowK, hoverThrottle);
-  Serial.printf("ATT_TAU=%.3f ACC_Z_MIN=%.3f\n", attTau, accZMin);
-  Serial.printf("TOF_EMA_A=%.3f BARO_EMA_A=%.3f ALT_EMA_A=%.3f TOF_JUMP_REJECT_M=%.3f\n",
+  LOG_CFG_PRINTLN("---- Tuning dump ----");
+  LOG_CFG_PRINTF("ALT_KP=%.4f ALT_KD=%.4f YAW_KP=%.4f\n", altKp, altKd, yawKp);
+  LOG_CFG_PRINTF("FLOW_K=%.6f HOVER_PWM=%d\n", flowK, hoverThrottle);
+  LOG_CFG_PRINTF("ATT_TAU=%.3f ACC_Z_MIN=%.3f\n", attTau, accZMin);
+  LOG_CFG_PRINTF("TOF_EMA_A=%.3f BARO_EMA_A=%.3f ALT_EMA_A=%.3f TOF_JUMP_REJECT_M=%.3f\n",
                 tofEmaA, baroEmaA, altEmaA, tofJumpRejectM);
-  Serial.printf("GYRO_BIAS X=%.4f Y=%.4f Z=%.4f\n", gyroX_bias, gyroY_bias, gyroZ_bias);
-  Serial.println("---- end ----");
+  LOG_CFG_PRINTF("GYRO_BIAS X=%.4f Y=%.4f Z=%.4f\n", gyroX_bias, gyroY_bias, gyroZ_bias);
+  LOG_CFG_PRINTLN("---- end ----");
 }
 
 // ============================================================================
-// KO: 시리얼 명령 (테스트/캘리브레이션/호버학습)
+// KO: 떆由ъ뼹 紐낅졊 (뀒뒪듃/罹섎━釉뚮젅씠뀡/샇踰꾪븰뒿)
 // EN: Serial commands (test/calibration/hover learn)
 // ============================================================================
 static bool imuStreamEnabled = false;
@@ -1308,7 +1494,7 @@ static uint32_t imuStreamNextMs = 0;
 static const uint32_t IMU_STREAM_PERIOD_MS = 50; // 20 Hz
 
 static inline void serialCommands(){
-  // KO: 논블로킹 라인 리더 (제어 루프 스톨 방지)
+  // KO: 끉釉붾줈궧 씪씤 由щ뜑 (젣뼱 猷⑦봽 뒪넧 諛⑹)
   // EN: Non-blocking line reader (prevents control-loop stalls)
   static char cmdBuf[96];
   static uint8_t cmdLen = 0;
@@ -1326,35 +1512,35 @@ static inline void serialCommands(){
       if(s.length()==0) continue;
 
       if(s == "C"){ startFlowAutoCal(0.50f, 0.80f, 35.0f); continue; }
-      if(s == "Y0"){ yawReset(); Serial.println("Yaw reset."); continue; }
+      if(s == "Y0"){ yawReset(); LOG_CMD_PRINTLN("Yaw reset."); continue; }
       if(s == "1510"){ // start IMU stream
         imuStreamEnabled = true;
         imuStreamNextMs = 0;
-        Serial.println("IMU STREAM ON");
+        LOG_CMD_PRINTLN("IMU STREAM ON");
         continue;
       }
       if(s == "1511"){ // stop IMU stream
         imuStreamEnabled = false;
-        Serial.println("IMU STREAM OFF");
+        LOG_CMD_PRINTLN("IMU STREAM OFF");
         continue;
       }
 
-      if(s == "T"){ // KO: 이륙(hover 학습) / EN: takeoff (hover learn)
+      if(s == "T"){ // KO: 씠瑜(hover 븰뒿) / EN: takeoff (hover learn)
         if(currentMode == MODE_READY) {
           hover_startLearn();
-          Serial.println("Takeoff: hover learn started.");
+          LOG_CMD_PRINTLN("Takeoff: hover learn started.");
         }
         continue;
       }
       if(s == "L"){
         if(currentMode != MODE_READY) currentMode = MODE_LANDING;
-        Serial.println("Landing.");
+        LOG_CMD_PRINTLN("Landing.");
         continue;
       }
       if(s == "K"){
         currentMode = MODE_EMERGENCY;
         motorsOff();
-        Serial.println("KILL MOTORS!");
+        LOG_CMD_PRINTLN("KILL MOTORS!");
         continue;
       }
 
@@ -1367,43 +1553,43 @@ static inline void serialCommands(){
             float actual_m = actual_cm * 0.01f;
             flowK = actual_m / (avgH * counts);
             prefs.putFloat("flowK", flowK);
-            Serial.printf("FLOW CAL REFINE: actual=%.1fcm => flowK=%.6f (saved)\n", actual_cm, flowK);
+            LOG_CMD_PRINTF("FLOW CAL REFINE: actual=%.1fcm => flowK=%.6f (saved)\n", actual_cm, flowK);
           }
         }
         continue;
       }
 
-      // KO: 배터리 체크 명령 (raw + filtered)
+      // KO: 諛고꽣由 泥댄겕 紐낅졊 (raw + filtered)
       // EN: Battery check command (raw + filtered)
       if(s == "B"){
-        Serial.printf("Battery: %.2fV (filt %.2fV)\n", batteryVoltage, batteryVoltageFilt);
+        LOG_CMD_PRINTF("Battery: %.2fV (filt %.2fV)\n", batteryVoltage, batteryVoltageFilt);
         continue;
       }
 
-      // KO: 튜닝 덤프
+      // KO: 뒠떇 뜡봽
       // EN: Tuning dump
       if(s == "PID?" || s == "TUNE?"){
         printTuning(false);
         continue;
       }
-      // KO: AF1000X_PID.h 붙여넣기 스니펫 출력
+      // KO: AF1000X_PID.h 遺숈뿬꽔湲 뒪땲렖 異쒕젰
       // EN: Print snippet to paste into AF1000X_PID.h
       if(s == "PIDDEF"){
         printTuning(true);
         continue;
       }
 
-      // KO: 알 수 없는 명령 무시
+      // KO: 븣 닔 뾾뒗 紐낅졊 臾댁떆
       // EN: Unknown command -> ignore
       continue;
     }
 
-    // KO: 문자 누적
+    // KO: 臾몄옄 늻쟻
     // EN: Accumulate characters
     if(cmdLen < (sizeof(cmdBuf)-1)){
       cmdBuf[cmdLen++] = c;
     } else {
-      // KO: 오버플로우 -> 버퍼 리셋
+      // KO: 삤踰꾪뵆濡쒖슦 -> 踰꾪띁 由ъ뀑
       // EN: overflow -> reset buffer
       cmdLen = 0;
     }
@@ -1414,12 +1600,12 @@ static inline void imuStreamTick(uint32_t now){
   if(!imuStreamEnabled) return;
   if((int32_t)(now - imuStreamNextMs) < 0) return;
   imuStreamNextMs = now + IMU_STREAM_PERIOD_MS;
-  Serial.printf("IMU %.3f %.3f %.3f %.2f\n", currentRoll, currentPitch, currentYaw, batteryVoltageFilt);
+  LOG_IMU_PRINTF("IMU %.3f %.3f %.3f %.2f\n", currentRoll, currentPitch, currentYaw, batteryVoltageFilt);
 }
 
 
 // ============================================================================
-// KO: POST + 캘리브레이션
+// KO: POST + 罹섎━釉뚮젅씠뀡
 // EN: POST + calibration
 // ============================================================================
 static inline bool postSensors(){
@@ -1430,23 +1616,26 @@ static inline bool postSensors(){
 
   ledSet(ok_imu, ok_baro, ok_tof, ok_flow);
 
-  // KO: 필수 = Baro + ToF + Flow (IMU는 실패해도 비행 가능하지만 권장)
-  // EN: Required = Baro + ToF + Flow (IMU failure allowed but not recommended)
-  flightLock = !(ok_baro && ok_tof && ok_flow);
+  // Required = IMU + BARO (ToF/Flow optional)
+  flightLock = !(ok_imu && ok_baro);
+
+  const bool anyFail = !(ok_imu && ok_baro && ok_tof && ok_flow);
+  if(anyFail){
+    ledPostStatusDelay(ok_imu, ok_baro, ok_tof, ok_flow, 3000);
+  }
 
   if(flightLock){
-    Serial.printf("POST FAIL -> FLIGHT LOCK (IMU=%d BARO=%d TOF=%d FLOW=%d)\n",
+    LOG_PRINTF("POST FAIL -> FLIGHT LOCK (IMU=%d BARO=%d TOF=%d FLOW=%d)\n",
                   ok_imu, ok_baro, ok_tof, ok_flow);
-    ledFailPattern();
     return false;
   }
-  Serial.printf("POST OK (IMU=%d BARO=%d TOF=%d FLOW=%d)\n",
+  LOG_PRINTF("POST OK (IMU=%d BARO=%d TOF=%d FLOW=%d)\n",
                 ok_imu, ok_baro, ok_tof, ok_flow);
   return true;
 }
 
 static inline bool calibrateSensors(){
-  // KO: 기압 기준값
+  // KO: 湲곗븬 湲곗媛
   // EN: Baro baseline
   float sumP=0; int got=0;
   for(int i=0;i<200;i++){
@@ -1457,13 +1646,14 @@ static inline bool calibrateSensors(){
   if(got < 120) return false;
   basePressurePa = sumP / got;
 
-  // KO: 필터 리셋
+  // KO: 븘꽣 由ъ뀑
   // EN: reset filters
   altInit=false;
   baroInit=false;
   tofFiltInit=false;
+  tofFailCount = 0;
 
-  // KO: IMU 자이로 바이어스 (옵션)
+  // KO: IMU 옄씠濡 諛붿씠뼱뒪 (샃뀡)
   // EN: IMU gyro bias (optional)
   if(ok_imu){
     if(!imu_calibrate_gyroZ()){
@@ -1479,31 +1669,31 @@ static inline bool calibrateSensors(){
 }
 
 // ============================================================================
-// KO: 공개 API
+// KO: 怨듦컻 API
 // EN: Public APIs
 // ============================================================================
 static inline void calibrate(){
   if(currentMode == MODE_READY){
-    Serial.println("AF: calibrate (ground)");
+    LOG_PRINTLN("AF: calibrate (ground)");
     if(!calibrateSensors()){
-      Serial.println("AF: calibrate FAIL -> lock");
+      LOG_PRINTLN("AF: calibrate FAIL -> lock");
       flightLock = true;
       ledFailPattern();
     } else {
-      Serial.println("AF: calibrate OK");
+      LOG_PRINTLN("AF: calibrate OK");
     }
   }
 }
 
 static inline void autoTakeoff(){
   if(flightLock){
-    Serial.println("AF: FLIGHT LOCK - takeoff blocked");
+    LOG_PRINTLN("AF: FLIGHT LOCK - takeoff blocked");
     currentMode = MODE_READY;
     motorsOff();
     return;
   }
   if(currentMode == MODE_READY){
-    hover_startLearn(); // KO: A 방식 시작 / EN: start A method
+    hover_startLearn(); // KO: A 諛⑹떇 떆옉 / EN: start A method
   }
 }
 
@@ -1521,14 +1711,191 @@ static inline void emergencyStop(){
   armHighPrev = false;
   armPulsing = false;
   autoTakeoffPending = false;
+  flipActive = false;
+  flipDir = 0;
+  turtleActive = false;
+  turtleResetTrigger();
 }
 
 // ============================================================================
-// KO: updateSystem / updateFlight
+// KO: 플립(360도)
+// EN: Flip (360-degree)
+// ============================================================================
+static inline bool flipCanStart(){
+  if(flipActive) return false;
+  if(millis() < flipCooldownUntil) return false;
+  if(flightLock || failsafe) return false;
+  if(!ok_imu) return false;
+  if(g_ledHeadless) return false;
+  if(currentMode != MODE_HOVERING) return false;
+  if(batteryVoltageFilt < FLIP_MIN_VOLTAGE) return false;
+  if(currentAltitude < FLIP_MIN_ALT_M) return false;
+  return true;
+}
+
+static inline void flipStart(uint8_t dir){
+  if(!flipCanStart()) return;
+  flipActive = true;
+  flipDir = dir;
+  flipAngleDeg = 0.0f;
+  flipStartMs = millis();
+}
+
+static inline void flipFinish(){
+  flipActive = false;
+  flipDir = 0;
+  flipCooldownUntil = millis() + FLIP_COOLDOWN_MS;
+  targetAltitude = currentAltitude;
+  targetYaw = currentYaw;
+  targetPosX = currentPosX;
+  targetPosY = currentPosY;
+}
+
+static inline bool flipUpdate(){
+  if(!flipActive) return false;
+  if(failsafe || flightLock || currentMode == MODE_EMERGENCY){
+    emergencyStop();
+    flipActive = false;
+    flipDir = 0;
+    return false;
+  }
+  if(batteryVoltageFilt < FLIP_MIN_VOLTAGE){
+    flipFinish();
+    return false;
+  }
+  uint32_t now = millis();
+  float rate = 0.0f;
+  if(flipDir == AUX1_FLIP_ROLL_POS || flipDir == AUX1_FLIP_ROLL_NEG){
+    rate = fabsf(gyroX_dps);
+  } else if(flipDir == AUX1_FLIP_PITCH_POS || flipDir == AUX1_FLIP_PITCH_NEG){
+    rate = fabsf(gyroY_dps);
+  } else {
+    flipFinish();
+    return false;
+  }
+  flipAngleDeg += rate * g_loopDt;
+  if(flipAngleDeg >= FLIP_TARGET_DEG || (now - flipStartMs) >= FLIP_MAX_TIME_MS){
+    flipFinish();
+    return false;
+  }
+  int thr = hoverThrottle + FLIP_THR_BOOST;
+  thr = constrain(thr, 0, 255);
+  float r = 0.0f;
+  float p = 0.0f;
+  if(flipDir == AUX1_FLIP_ROLL_POS) r = FLIP_RATE_CMD;
+  else if(flipDir == AUX1_FLIP_ROLL_NEG) r = -FLIP_RATE_CMD;
+  else if(flipDir == AUX1_FLIP_PITCH_POS) p = FLIP_RATE_CMD;
+  else if(flipDir == AUX1_FLIP_PITCH_NEG) p = -FLIP_RATE_CMD;
+  motorControl(thr, r, p, 0.0f);
+  return true;
+}
+
+// ============================================================================
+// EN: Self-righting (turtle mode)
+// ============================================================================
+static inline bool turtleIsInverted(){
+  if(!ok_imu) return false;
+  float absRoll = fabsf(currentRoll);
+  float absPitch = fabsf(currentPitch);
+  return (absRoll >= TURTLE_INVERTED_DEG || absPitch >= TURTLE_INVERTED_DEG);
+}
+
+static inline void turtleResetTrigger(){
+  turtleDownCount = 0;
+  turtleFirstDownMs = 0;
+  turtleLowPrev = false;
+}
+
+static inline void turtleStop(){
+  turtleActive = false;
+  turtleDir = 0;
+}
+
+static inline void turtleStart(){
+  if(currentMode != MODE_EMERGENCY) return;
+  if(failsafe || flightLock || !ok_imu) return;
+  if(!turtleIsInverted()) return;
+
+  float absRoll = fabsf(currentRoll);
+  float absPitch = fabsf(currentPitch);
+  bool rollInv = absRoll >= TURTLE_INVERTED_DEG;
+  bool pitchInv = absPitch >= TURTLE_INVERTED_DEG;
+  if(!rollInv && !pitchInv) return;
+
+  if(rollInv && (!pitchInv || absRoll <= absPitch)){
+    turtleAxis = 0; // roll
+    turtleDir = (currentRoll > 0.0f) ? -1 : 1;
+  } else {
+    turtleAxis = 1; // pitch
+    turtleDir = (currentPitch > 0.0f) ? -1 : 1;
+  }
+
+  turtleActive = true;
+  turtleStartMs = millis();
+}
+
+static inline bool turtleUpdate(){
+  if(!turtleActive) return false;
+  if(currentMode != MODE_EMERGENCY || failsafe || flightLock){
+    turtleStop();
+    return false;
+  }
+  if(!turtleIsInverted()){
+    turtleStop();
+    return false;
+  }
+  if(millis() - turtleStartMs >= TURTLE_MAX_TIME_MS){
+    turtleStop();
+    return false;
+  }
+
+  float r = 0.0f;
+  float p = 0.0f;
+  if(turtleAxis == 0) r = TURTLE_RATE_CMD * turtleDir;
+  else p = TURTLE_RATE_CMD * turtleDir;
+
+  motorControl(TURTLE_THR, r, p, 0.0f);
+  return true;
+}
+
+static inline void turtleTriggerTick(){
+  if(turtleActive) return;
+  if(currentMode != MODE_EMERGENCY || failsafe || flightLock || !ok_imu){
+    turtleResetTrigger();
+    return;
+  }
+  if(!turtleIsInverted()){
+    turtleResetTrigger();
+    return;
+  }
+
+  uint32_t now = millis();
+  bool low = (receiverData.throttle <= ARM_THROTTLE_LOW);
+
+  if(low && !turtleLowPrev){
+    if(turtleDownCount == 0) turtleFirstDownMs = now;
+    if(now - turtleFirstDownMs <= TURTLE_WINDOW_MS){
+      turtleDownCount++;
+    } else {
+      turtleDownCount = 1;
+      turtleFirstDownMs = now;
+    }
+    if(turtleDownCount >= TURTLE_DOWN_COUNT){
+      turtleResetTrigger();
+      turtleStart();
+    }
+  }
+  if(turtleDownCount > 0 && (now - turtleFirstDownMs > TURTLE_WINDOW_MS)){
+    turtleResetTrigger();
+  }
+  turtleLowPrev = low;
+}
+
+// ============================================================================
 // EN: updateSystem / updateFlight
 // ============================================================================
 static inline void updateSystem(){
-  // KO: 바인딩 상태 우선 업데이트
+  // KO: 諛붿씤뵫 긽깭 슦꽑 뾽뜲씠듃
   // EN: Always update binding state first
   binding_update();
   g_ledBound = binding_isBound();
@@ -1545,7 +1912,7 @@ static inline void updateSystem(){
   }
   lastLink = linkReady;
 
-  // KO: 배터리 체크 (10Hz, 바인딩 전에도)
+  // KO: 諛고꽣由 泥댄겕 (10Hz, 諛붿씤뵫 쟾뿉룄)
   // EN: Battery check (10Hz) even before binding completes
   static uint32_t lastBatMs = 0;
   uint32_t nowBatMs = millis();
@@ -1556,17 +1923,18 @@ static inline void updateSystem(){
   g_ledLowBattery = (batteryLowWarning || batteryCritical);
   bool batteryOkForArm = (batteryVoltageFilt >= BATTERY_ARM_MIN_VOLTAGE);
 
-  // KO: 헤드리스 플래그 (최신 RX 데이터 이후 갱신)
+  // KO: 헤드리스 상태
   // EN: Headless flag (updated after we have fresh RX data)
   g_ledHeadless = false;
+  g_ledFlipReady = false;
   g_ledAutoTune = tune_isActive();
 
-  // KO: 부팅/바인딩 중에도 LED 구동
+  // KO: 遺똿/諛붿씤뵫 以묒뿉룄 LED 援щ룞
   // EN: Drive LEDs during boot/binding too
   ledTick();
 
   if (!g_ledBound || !linkReady) {
-    // KO: 미바운드/링크 미준비 -> 제어/비행 금지
+    // KO: 誘몃컮슫뱶/留곹겕 誘몄鍮 -> 젣뼱/鍮꾪뻾 湲덉
     // EN: Not bound or link not ready -> no control / no flight
     currentMode = MODE_READY;
     motorsOff();
@@ -1575,16 +1943,21 @@ static inline void updateSystem(){
     armHighPrev = false;
     armPulsing = false;
     autoTakeoffPending = false;
+    flipActive = false;
+    flipDir = 0;
+    turtleActive = false;
+    turtleResetTrigger();
+    g_ledFlipReady = false;
     return;
   }
   updateRadio();
 
-  // KO: AUX1=2 자이로 초기화 요청 (READY + 스로틀 낮음)
+  // KO: AUX1=2 옄씠濡 珥덇린솕 슂泥 (READY + 뒪濡쒗 궙쓬)
   // EN: Gyro init request via AUX1=2 (READY + low throttle)
   {
     static uint32_t gyroReqStart = 0;
     static bool gyroReqLatched = false;
-    if(receiverData.aux1 == 2 && currentMode == MODE_READY && receiverData.throttle < 20){
+    if(receiverData.aux1 == AUX1_GYRO_RESET && currentMode == MODE_READY && receiverData.throttle < 20){
       if(gyroReqStart == 0) gyroReqStart = millis();
       if(!gyroReqLatched && (millis() - gyroReqStart >= 200)){
         if(imu_calibrate_gyroZ()){
@@ -1600,10 +1973,29 @@ static inline void updateSystem(){
     }
   }
 
-  // KO: 헤드리스/플로우 (TX aux2 비트)
-  // EN: Headless/flow (TX aux2 bits)
+// KO: 헤드리스/Flow/플립 준비 (TX aux2 bits)
+// EN: Headless/flow/flip ready (TX aux2 bits)
   g_ledHeadless = (receiverData.aux2 & AUX2_HEADLESS) != 0;
   flowUserEnabled = (receiverData.aux2 & AUX2_FLOW) != 0;
+  g_ledFlipReady = (receiverData.aux2 & AUX2_FLIP_READY) != 0;
+  if(g_ledHeadless) g_ledFlipReady = false;
+
+  // EN: User outputs (servo/LED) via AUX1 pulses
+  {
+    static uint8_t lastAux1 = 0;
+    uint8_t aux1 = receiverData.aux1;
+    if(aux1 == AUX1_SERVO_TOGGLE && lastAux1 != AUX1_SERVO_TOGGLE){
+      userServoToggle();
+    }
+    if(aux1 == AUX1_LED_STEP && lastAux1 != AUX1_LED_STEP){
+      userLedStep();
+    }
+    if((aux1 == AUX1_FLIP_ROLL_POS || aux1 == AUX1_FLIP_ROLL_NEG ||
+        aux1 == AUX1_FLIP_PITCH_POS || aux1 == AUX1_FLIP_PITCH_NEG) && lastAux1 != aux1){
+      flipStart(aux1);
+    }
+    lastAux1 = aux1;
+  }
 
   serialCommands();  
 
@@ -1611,10 +2003,19 @@ static inline void updateSystem(){
   else currentYaw = 0.0f;
   imuStreamTick(millis());
 
-  // KO: 모터 시동(아이들 스핀) - 좌 스틱 더블업
+  // EN: Turtle trigger (three throttle downs)
+  turtleTriggerTick();
+
+  bool levelOkForArm = ok_imu &&
+                       (fabsf(currentRoll) <= ARM_LEVEL_DEG) &&
+                       (fabsf(currentPitch) <= ARM_LEVEL_DEG);
+  bool inverted = turtleIsInverted();
+  bool armOk = (!flightLock && !failsafe && batteryOkForArm && levelOkForArm && !inverted);
+
+
   // EN: Motor arm (idle spin) - left stick double-up within window
   {
-    if(currentMode != MODE_READY || flightLock || failsafe || !batteryOkForArm){
+    if(currentMode != MODE_READY || !armOk){
       motorArmedIdle = false;
       armAwaitSecond = false;
       armHighPrev = false;
@@ -1642,7 +2043,6 @@ static inline void updateSystem(){
 
       armHighPrev = high;
 
-      // KO: 스로틀 하단 홀드 시 시동 해제
       // EN: Disarm if throttle fully low for hold time
       if(motorArmedIdle && receiverData.throttle <= ARM_THROTTLE_LOW){
         if(armDisarmStartMs == 0) armDisarmStartMs = millis();
@@ -1657,18 +2057,22 @@ static inline void updateSystem(){
     }
   }
 
-  // KO: 자동 이착륙 요청 (AUX1 펄스)
   // EN: Auto takeoff / landing request (AUX1 pulse)
   {
     static bool aux1Prev = false;
-    bool aux1Now = (receiverData.aux1 == 1);
+    bool aux1Now = (receiverData.aux1 == AUX1_TAKEOFF);
     if(aux1Now && !aux1Prev){
-  if(currentMode == MODE_READY && !flightLock && !failsafe && batteryOkForArm){
-        motorArmedIdle = true;
-        armPulsing = true;
-        armPulseStartMs = millis();
-        autoTakeoffPending = true;
-        autoTakeoffAtMs = millis() + AUTO_TAKEOFF_DELAY_MS;
+      if(currentMode == MODE_READY && armOk){
+        if(motorArmedIdle){
+          autoTakeoffPending = true;
+          autoTakeoffAtMs = millis();
+        } else {
+          motorArmedIdle = true;
+          armPulsing = true;
+          armPulseStartMs = millis();
+          autoTakeoffPending = true;
+          autoTakeoffAtMs = millis() + AUTO_TAKEOFF_DELAY_MS;
+        }
         targetAltitude = currentAltitude;
         targetYaw = currentYaw;
         targetPosX = currentPosX;
@@ -1683,7 +2087,7 @@ static inline void updateSystem(){
     aux1Prev = aux1Now;
   }
 
-  if(autoTakeoffPending && currentMode == MODE_READY && !flightLock && !failsafe && batteryOkForArm){
+  if(autoTakeoffPending && currentMode == MODE_READY && armOk){
     if(millis() >= autoTakeoffAtMs){
       autoTakeoffPending = false;
       motorArmedIdle = false;
@@ -1696,9 +2100,8 @@ static inline void updateSystem(){
     }
   }
 
-  // KO: 이륙 시작 (아이들 시동 상태 + 스로틀 상승)
   // EN: Takeoff start: if armed idle and throttle pushed up
-  if(motorArmedIdle && currentMode == MODE_READY && !flightLock && !failsafe && batteryOkForArm){
+  if(motorArmedIdle && currentMode == MODE_READY && armOk){
     if(receiverData.throttle >= ARM_TAKEOFF_THRESH){
       motorArmedIdle = false;
       armPulsing = false;
@@ -1709,7 +2112,6 @@ static inline void updateSystem(){
     }
   }
 
-  // KO: 스로틀 하강 -> TAKEOFF에서 READY로 복귀
   // EN: Throttle down -> TAKEOFF back to READY
   if(currentMode == MODE_TAKEOFF && receiverData.throttle <= ARM_THROTTLE_LOW){
     currentMode = MODE_READY;
@@ -1719,11 +2121,10 @@ static inline void updateSystem(){
     autoTakeoffPending = false;
   }
 
-  // KO: 틸트 킬 (롤/피치 임계값 초과 시 긴급 정지)
   // EN: Tilt kill: emergency stop if roll/pitch exceeds threshold
   {
     static uint32_t tiltStartMs = 0;
-    if(ok_imu && currentMode != MODE_READY && currentMode != MODE_EMERGENCY){
+    if(ok_imu && currentMode != MODE_READY && currentMode != MODE_EMERGENCY && !flipActive){
       float absRoll = fabsf(currentRoll);
       float absPitch = fabsf(currentPitch);
       if(absRoll > TILT_KILL_DEG || absPitch > TILT_KILL_DEG){
@@ -1744,67 +2145,67 @@ static inline void updateSystem(){
   updatePositionFromFlow();
   flowCalTick();
 
-  // KO: Hover 상태머신 tick (A 방식)
+  // KO: Hover 긽깭癒몄떊 tick (A 諛⑹떇)
   // EN: Hover state machine tick (A method)
   hover_update();
 
-  // KO: Hover 준비 후 오토튠 (ALT PD + YAW P)
+  // KO: Hover 以鍮 썑 삤넗뒥 (ALT PD + YAW P)
   // EN: Auto tune after hover ready (ALT PD + YAW P)
   tune_update();
   g_ledAutoTune = tune_isActive();
 
   // ==========================================================================
-  // KO: 스틱 입력 처리 (중복 제거)
+  // KO: 뒪떛 엯젰 泥섎━ (以묐났 젣嫄)
   // EN: Stick input handling (duplicate removed)
   // ==========================================================================
-  if ((currentMode == MODE_HOVERING || currentMode == MODE_TAKEOFF) && !failsafe && !tune_isActive()) {
-    // KO: 1) 데드존 설정 (중앙 127 기준 ±10 무시)
-    // EN: 1) Deadzone (ignore ±10 around 127)
+  if ((currentMode == MODE_HOVERING || currentMode == MODE_TAKEOFF) && !failsafe && !tune_isActive() && !flipActive) {
+    // KO: 1) 뜲뱶議 꽕젙 (以묒븰 127 湲곗 짹10 臾댁떆)
+    // EN: 1) Deadzone (ignore 짹10 around 127)
     int rawRoll = receiverData.roll;
     int rawPitch = receiverData.pitch;
     int rawThr = receiverData.throttle;
     int rawYaw = receiverData.yaw;
 
-    float vX_cmd = 0.0f; // KO: 좌우 이동 속도 / EN: lateral velocity cmd
-    float vY_cmd = 0.0f; // KO: 전후 이동 속도 / EN: forward velocity cmd
+    float vX_cmd = 0.0f; // KO: 醫뚯슦 씠룞 냽룄 / EN: lateral velocity cmd
+    float vY_cmd = 0.0f; // KO: 쟾썑 씠룞 냽룄 / EN: forward velocity cmd
 
-    // KO: Roll (좌우)
+    // KO: Roll (醫뚯슦)
     // EN: Roll (lateral)
     if (abs(rawRoll - 127) > 10) {
       float input = (float)(rawRoll - 127) / 127.0f;
       vX_cmd = input * moveSpeedSteps[speedLevel]; 
     }
 
-    // KO: Pitch (전후)
+    // KO: Pitch (쟾썑)
     // EN: Pitch (forward/back)
     if (abs(rawPitch - 127) > 10) {
       float input = (float)(rawPitch - 127) / 127.0f;
       vY_cmd = input * moveSpeedSteps[speedLevel];
     }
 
-    // KO: Yaw (회전)
+    // KO: Yaw (쉶쟾)
     // EN: Yaw (rotation)
     if (abs(rawYaw - 127) > 10) {
       float input = (float)(rawYaw - 127) / 127.0f;
       targetYaw += input * yawSpeedSteps[speedLevel] * g_loopDt;
-      // KO: 각도 래핑
+      // KO: 媛곷룄 옒븨
       // EN: Wrap angle
       while(targetYaw > 180.0f) targetYaw -= 360.0f;
       while(targetYaw < -180.0f) targetYaw += 360.0f;
     }
 
-    // KO: Throttle (고도 미세 조정)
+    // KO: Throttle (怨좊룄 誘몄꽭 議곗젙)
     // EN: Throttle (altitude trim)
     if (abs(rawThr - 127) > 20) {
       float input = (float)(rawThr - 127) / 127.0f;
       targetAltitude += input * climbSpeedSteps[speedLevel] * g_loopDt;
-      // KO: 고도 안전 제한 (0.1m ~ 2.5m)
+      // KO: 怨좊룄 븞쟾 젣븳 (0.1m ~ 2.5m)
       // EN: Altitude limits (0.1m ~ 2.5m)
       if (targetAltitude < 0.1f) targetAltitude = 0.1f;
       if (targetAltitude > 2.5f) targetAltitude = 2.5f;
     }
 
-    // KO: 2) 좌표계 변환 (드론 헤딩 기준)
+    // KO: 2) 醫뚰몴怨 蹂솚 (뱶濡 뿤뵫 湲곗)
     // EN: 2) Frame transform (drone heading)
     if (vX_cmd != 0.0f || vY_cmd != 0.0f) {
       float rad = currentYaw * DEG_TO_RAD;
@@ -1814,7 +2215,7 @@ static inline void updateSystem(){
       float dX_world = (vY_cmd * c - vX_cmd * s) * g_loopDt; 
       float dY_world = (vY_cmd * s + vX_cmd * c) * g_loopDt;
 
-      // KO: 안전 제한
+      // KO: 븞쟾 젣븳
       // EN: Safety clamp
       const float MAX_TARGET_STEP = 0.12f * g_loopDt;
       dX_world = clampf(dX_world, -MAX_TARGET_STEP, MAX_TARGET_STEP);
@@ -1827,10 +2228,10 @@ static inline void updateSystem(){
   // ============================================================
 
 
-  // KO: LED 업데이트
+  // KO: LED 뾽뜲씠듃
   // EN: LED update
   ledSet(ok_imu, ok_baro, ok_tof, ok_flow && flowUserEnabled);
-  // KO: 최종 LED tick (상태 업데이트 후)
+  // KO: 理쒖쥌 LED tick (긽깭 뾽뜲씠듃 썑)
   // EN: Final LED tick (after state updates)
   ledTick();
 
@@ -1838,6 +2239,9 @@ static inline void updateSystem(){
 
 static inline void updateFlight(){
   if(currentMode == MODE_READY || currentMode == MODE_EMERGENCY){
+    if(currentMode == MODE_EMERGENCY){
+      if(turtleUpdate()) return;
+    }
     if(currentMode == MODE_READY && motorArmedIdle){
       uint32_t now = millis();
       int pwm = ARM_IDLE_PWM_LOW;
@@ -1861,7 +2265,9 @@ static inline void updateFlight(){
     return;
   }
 
-  // KO: TAKEOFF -> HOVERING 전환은 hover header가 안정 시 수행
+
+  if(flipUpdate()) return;
+  // KO: TAKEOFF -> HOVERING 쟾솚 hover header媛 븞젙 떆 닔뻾
   // EN: TAKEOFF -> HOVERING handled by hover header when stable
   // KO: LANDING
   // EN: LANDING
@@ -1895,7 +2301,7 @@ static inline void updateFlight(){
   float zVel = (alt_m_filt - alt_m_prev) / g_loopDt;
   float zCmd = (zErr * altKp) - (zVel * altKd);
 
-  // KO: Hover 학습이 hoverThrottle을 자동 보정
+  // KO: Hover 븰뒿씠 hoverThrottle쓣 옄룞 蹂댁젙
   // EN: Hover learning auto-adjusts hoverThrottle
   hover_onZcmd(zCmd);
 
@@ -1906,14 +2312,16 @@ static inline void updateFlight(){
 }
 
 // ============================================================================
-// KO: 초기화
+// KO: 珥덇린솕
 // EN: init
 // ============================================================================
 static inline void initAF1000X(){
-  Serial.println("AF1000X: init (FIXED VERSION)");
+  // init log suppressed (banner+POST only)
 
   ledsInit();
   motorsInit();
+  userLedInit();
+  userServoInit();
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   Wire.setClock(400000);
@@ -1924,13 +2332,21 @@ static inline void initAF1000X(){
 
   prefs.begin("af1000x", false);
   flowK = prefs.getFloat("flowK", flowK);
-  Serial.printf("flowK=%.6f (loaded)\n", flowK);
+  // flowK load log suppressed (banner+POST only)
   tune_loadFromNVS();
   tune_saveFilterParamsIfMissing();
 
-  // KO: POST + 캘리브레이션
+  // KO: POST + 罹섎━釉뚮젅씠뀡
   // EN: POST + calibration
   postSensors();
+  g_serialMuteAfterPost = true;
+  if(flightLock){
+    LOG_PRINTLN("AF1000X: POST FAIL (IMU/BARO) - HARD LOCK");
+    motorsOff();
+    while(true){
+      ledPostStatusDelay(ok_imu, ok_baro, ok_tof, ok_flow, 3000);
+    }
+  }
   if(!flightLock){
     if(!calibrateSensors()){
       flightLock = true;
@@ -1940,11 +2356,12 @@ static inline void initAF1000X(){
 
   
   // ============================================================================
-  // KO: LED 부팅 시퀀스 초기화 (전체 점멸 또는 inverted chase)
+  // KO: LED 遺똿 떆뒪 珥덇린솕 (쟾泥 젏硫 삉뒗 inverted chase)
   // EN: LED boot sequence init (blink-all or inverted chase)
   // ============================================================================
   g_ledBound = false;
   g_ledHeadless = false;
+  g_ledFlipReady = false;
   g_ledLowBattery = false;
 
   bool invertedAtBoot = false;
@@ -1960,12 +2377,12 @@ static inline void initAF1000X(){
 binding_begin();
   fhssInit();
 
-  hover_begin(); // KO: hoverPWM 로드 / EN: load hoverPWM
+  hover_begin(); // KO: hoverPWM 濡쒕뱶 / EN: load hoverPWM
 
   currentMode = MODE_READY;
-  Serial.printf("AF1000X: READY (lock=%d)\n", (int)flightLock);
-  Serial.println("✅ Fixed: Duplicate stick input removed");
-  Serial.println("✅ Added: Battery protection");
+  LOG_PRINTF("AF1000X: READY (lock=%d)\n", (int)flightLock);
+  LOG_PRINTLN("쐟 Fixed: Duplicate stick input removed");
+  LOG_PRINTLN("쐟 Added: Battery protection");
 }
 
 #endif // KO: AF1000X_H / EN: AF1000X_H

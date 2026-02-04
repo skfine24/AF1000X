@@ -48,3 +48,9 @@ static const int PIN_LED_IMU  = 6;
 static const int PIN_LED_BARO = 7;
 static const int PIN_LED_TOF  = 8;
 static const int PIN_LED_FLOW = 9;
+
+// EN: User LED (single-wire RGB/NeoPixel data)
+static const int PIN_USER_LED = 17;
+
+// EN: User servo PWM
+static const int PIN_SERVO = 36;
