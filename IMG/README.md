@@ -20,7 +20,7 @@ AF1000X flight controller board. This README provides top and bottom view images
 ## 한국어
 
 ### 개요
-AF1000X 비행 컨트롤러 보드입니다. GitHub용으로 윗면/바닥면 이미지와 기계적 사양을 정리합니다.
+AF1000X 비행 컨트롤러 보드입니다. TOP / BOTTOM 이미지를 제공합니다.
 
 ### 이미지
 ![윗면](AF1000X_FC_top.png)
