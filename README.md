@@ -1,218 +1,365 @@
-# AF1000X (Educational Drone) Fly Controller
+# AF1000X Remote Controller
+### Drone Controller and PC Hub Transmitter for AF1000X
 
 ## English
 
 ### Overview
-AF1000X is an **educational micro-drone firmware project**.  
-It is designed to help learners understand the **entire drone system**, from PCB hardware to firmware and flight control logic.
+**AF1000X Remote Controller** is an RP2040-based transmitter that works as a **PC hub**.  
+It converts USB serial commands from a PC into RF control signals for the drone.
+
+- PC (USB Serial) -> AF1000X Controller (nRF24) -> Drone
+- No modification required on drone firmware
+- Designed for education, research, and automation
 
 ### Key Features
-1. IMU-based attitude stabilization (Roll / Pitch / Yaw)
-2. Fused altitude estimation using ToF + barometer (SPL06) with hovering
-3. Optical flow (PMW3901) position correction
-4. nRF24L01 2.4GHz wireless link + binding + hop table
-5. Battery voltage monitoring with warning/critical handling
-6. LED state indication (boot/bind/low-batt/gyro/headless/auto-tune)
-7. Serial command support and IMU streaming (`1510` start, `1511` stop)
+1. Physical joystick control (Mode 1/2 supported, Mode 2 default)
+2. PC serial command control (Hub Mode)
+3. ARM safety gate + 200ms PC timeout failsafe
+4. Emergency throttle cut
+5. Battery voltage query
+6. Unique TX ID stored in EEPROM (boot with GPIO10 held to regenerate)
+7. `DBUG` command: 1s debug output for sticks/battery/status
+8. USB device name: `SYUBEA AF1000X Controller`
+9. GPIO12 user button: short press = drone LED color step (WS2812C on GPIO17), long press (1.5s) = servo toggle on GPIO36 (0~180 deg, 900~2000us)
+10. Swarm/AMC mode: control up to 4 drones (D1~D4) from a single controller
 
-### Automated Features
-1. Auto takeoff / auto landing
-2. Hover learning with auto-adjust and persistence of `hoverThrottle`
-3. Optical-flow auto calibration (FlowK) sequence
-4. Sensor POST and auto initialization (IMU/ToF/Baro/Flow)
-5. Failsafe on link loss: hold then land
-6. Low-battery warning and emergency landing handling
-7. Auto tuning after hover ready (altitude PD + yaw P)
+### Hardware
+1. MCU: RP2040
+2. RF: nRF24L01+
+3. USB: RP2040 Native USB (CDC)
+4. Inputs: Joystick, buttons
+5. Output: RF packets
 
-### Highlights
-1. Modular structure optimized for education/research: `CORE`, `BINDING`, `HOVER`, `EasyCommander`, `AutoTune`, `GPIO`, `PID`
-2. PC tools included: firmware updater (PYW + auto dependency install) and IMU viewer (PYW + auto dependency install, graph/3D attitude)
-3. Easy debugging via serial logs/output
-4. Automatic UI language switch (Korean/English)
-
-### Key Chipset Specs
-1. MCU: ESP32-S3 (main controller)
-2. IMU: ICM45686 (6-axis accel/gyro, I2C)
-3. Barometer: SPL06 (pressure/altitude, I2C)
-4. ToF: VL53L1X (range/altitude, I2C, XSHUT control)
-5. Optical flow: PMW3901 (SPI)
-6. RF: nRF24L01 (2.4GHz, SPI)
-7. Battery ADC: 1S LiPo voltage monitor (ADC)
-8. Board size: 35mm x 35mm
-9. Motor support: 720 ~ 8250
-10. Auto-tune: adapts to motor/airframe characteristics
-
-Note: For detailed electrical specs, refer to each chip's datasheet.
-
-### File Descriptions
-1. `AF1000X_Main.ino`: Sketch entry, setup/loop and module wiring
-2. `AF1000X_CORE.h`: Sensor init, attitude/altitude/position estimation, control loop, status/LED, serial commands
-3. `AF1000X_BINDING.h`: RF binding, hop table, packet handling
-4. `AF1000X_Hover.h`: Hover learning and hoverThrottle adjustment/persistence
-5. `AF1000X_EasyCommander.h`: Convenience commands (takeoff/land)
-6. `AF1000X_AutoTune.h`: Auto-tuning routines
-7. `AF1000X_GPIO.h`: Pin map (I2C/SPI/RF/motors/LED/ADC)
-8. `AF1000X_PID.h`: PID and control parameters
-
-### Project Structure
+### PC Hub Architecture
 ```
-AF1000X/
-├─ AF1000X_Main.ino
-├─ AF1000X_CORE.h
-├─ AF1000X_BINDING.h
-├─ AF1000X_Hover.h
-├─ AF1000X_EasyCommander.h
-├─ AF1000X_AutoTune.h
-├─ AF1000X_GPIO.h
-├─ AF1000X_PID.h
-├─ README.md
+PC Script / Application
+          -> USB Serial (115200)
+     AF1000X Controller
+          -> nRF24
+            Drone
 ```
+
+The controller always acts as a **safety gate**, never allowing direct unsafe control from the PC.
+
+### Serial Command Reference
+See:
+- `AR1000X_Serial_Command_Reference.md`
+- `AR1000X_Controller_Operation.md` (pins/LEDs/buttons)
+
+### Swarm / AMC (Up to 4 Drones)
+Use AMC mode to control multiple drones.  
+Commands prefixed with `D1`~`D4` target a specific drone. Default target is `D1`.
+
+**Example**
+```
+ARM 1
+AMC ON
+D1 TAKEOFF
+D2 TAKEOFF
+D3 TAKEOFF
+D4 TAKEOFF
+D1 UP 120 1000
+D2 DOWN 120 1000
+EMERGENCY
+AMC OFF
+ARM 0
+```
+
+### Development Environment
+1. Arduino IDE 2.3.x
+2. Board: Raspberry Pi Pico / RP2040
+3. USB Stack: Pico SDK (Default)
+4. Baudrate: 115200
+
+### Required Libraries
+Controller (AR1000X):
+1. RF24 by TMRh20
+
+Drone (AF1000X):
+1. RF24 by TMRh20
+2. VL53L1X by Pololu
+3. ICM45686 library (provides `ICM45686.h`)
+4. Adafruit NeoPixel (WS2812C LED on GPIO17)
+
+Note: `Wire`, `SPI`, `EEPROM`, `Preferences` are provided by the board core.
+
+### Library Links & Versions (tested)
+Controller (AR1000X):
+1. RF24 by TMRh20 v1.5.0
+
+Drone (AF1000X):
+1. RF24 by TMRh20 v1.5.0
+2. VL53L1X by Pololu v1.3.1
+3. ICM45686 by TDK/Invensense v1.0.6
+4. Adafruit NeoPixel v1.15.2
+
+Links:
+```
+RF24: https://nRF24.github.io/RF24/
+VL53L1X: https://github.com/pololu/vl53l1x-arduino
+ICM45686: https://github.com/tdk-invn-oss/motion.arduino.ICM45686
+Adafruit NeoPixel: https://github.com/adafruit/Adafruit_NeoPixel
+```
+
+Note: Versions above are from the current dev environment; Library Manager latest is also acceptable.
+
+Important:  
+Remove or disable external TinyUSB libraries from:
+```
+Documents/Arduino/libraries/Adafruit_TinyUSB_Library
+```
+
+### Basic Usage Flow
+1. Connect USB and identify port
+2. Send `ARM 1` from PC
+3. Execute motion/control commands
+4. Use `EMERGENCY` if needed
+5. Send `ARM 0` before disconnecting
 
 ### Contact
-This FC is developed by SYUBEA Co., Ltd. (Korea). For purchase inquiries, please contact `hello@1510.co.kr`.
+This controller is developed by SYUBEA Co., Ltd. (Korea).  
+For purchase inquiries, please contact `hello@1510.co.kr`.
 
 ---
 
 ## 한국어
+### AF1000X 드론 컨트롤러 및 PC 허브 송신기
 
 ### 개요
-AF1000X는 교육 및 연구 목적의 **마이크로 드론 펌웨어 프로젝트**입니다.  
-PCB 하드웨어부터 펌웨어, 비행 제어 로직까지 **드론 시스템 전체를 이해**할 수 있도록 구성했습니다.
+**AF1000X Remote Controller**는 RP2040 기반 조종기로 **PC 허브**처럼 동작합니다.  
+PC의 USB 시리얼 명령을 RF 제어 신호로 변환해 드론에 전송합니다.
+
+- PC(USB Serial) -> AF1000X Controller(nRF24) -> Drone
+- 드론 펌웨어 수정 불필요
+- 교육/연구/자동화 목적
 
 ### 주요 기능
-1. IMU 기반 자세 안정화 (Roll / Pitch / Yaw)
-2. ToF + 기압계(SPL06) 융합 고도 추정 및 호버링
-3. 옵티컬 플로우(PMW3901) 기반 위치 보정
-4. nRF24L01 2.4GHz 무선 통신 + 바인딩 + 홉 테이블
-5. 배터리 전압 모니터링 및 경고/크리티컬 상태 처리
-6. LED 상태 표시(부팅/바인딩/저전압/자이로/헤드리스/오토튠)
-7. 시리얼 명령 지원 및 IMU 스트리밍 (`1510` 시작, `1511` 중지)
+1. 물리 조이스틱 조종 (MODE 1/2 지원, 기본 MODE 2)
+2. PC 시리얼 명령 제어 (Hub Mode)
+3. ARM 안전 게이트 + 200ms PC 타임아웃
+4. 긴급 스로틀 컷
+5. 배터리 전압 조회
+6. 고유 TX ID EEPROM 저장 (부팅 시 GPIO10 홀드하면 재생성)
+7. `DBUG` 명령: 스틱/배터리/상태 1초 주기 출력
+8. USB 디바이스 이름: `SYUBEA AF1000X Controller`
+9. GPIO12 사용자 버튼: 짧게 = 드론 LED 색상 단계(WS2812C, GPIO17), 길게(1.5초) = 서보 토글(GPIO36, 0~180 deg, 900~2000us)
+10. 군집/AMC 모드: 1대 조종기로 최대 4대(D1~D4) 제어
 
-### 자동화된 기능
-1. 자동 이륙 / 자동 착륙
-2. Hover 학습으로 `hoverThrottle` 자동 보정 및 저장
-3. 옵티컬 플로우 자동 캘리브레이션(FlowK) 시퀀스
-4. 센서 POST 및 자동 초기화(IMU/ToF/Baro/Flow)
-5. 링크 끊김 시 페일세이프: 유지 후 착륙
-6. 저전압 시 경고 및 비상 착륙 처리
-7. Hover 안정 후 자동 튜닝(고도 PD + 요 P)
+### 하드웨어
+1. MCU: RP2040
+2. RF: nRF24L01+
+3. USB: RP2040 Native USB (CDC)
+4. 입력: 조이스틱, 버튼
+5. 출력: RF 패킷
 
-### 특징
-1. 교육/연구용에 최적화된 모듈 구조: `CORE`, `BINDING`, `HOVER`, `EasyCommander`, `AutoTune`, `GPIO`, `PID`
-2. PC 도구 제공: 펌웨어 업로더 (PYW + 자동 의존성 설치) 및 IMU 뷰어 (PYW + 자동 의존성 설치, 그래프/3D 자세 표시)
-3. 시리얼 출력/로그 기반 디버깅 용이
-4. UI 한글/영문 자동 전환 지원
-
-### 주요 칩셋 스펙
-1. MCU: ESP32-S3 (메인 컨트롤러)
-2. IMU: ICM45686 (6축 가속/자이로, I2C)
-3. 기압계: SPL06 (압력/고도, I2C)
-4. ToF: VL53L1X (거리/고도, I2C, XSHUT 제어)
-5. 옵티컬 플로우: PMW3901 (SPI)
-6. RF: nRF24L01 (2.4GHz, SPI)
-7. 배터리 ADC: 1S LiPo 전압 모니터링 (ADC)
-8. 제품 사이즈: 35mm x 35mm
-9. 모터 지원: 720 ~ 8250
-10. 오토튠: 모터/기체 특성 자동 보정
-
-### 파일 설명
-1. `AF1000X_Main.ino`: 스케치 엔트리, setup/loop 및 모듈 연결
-2. `AF1000X_CORE.h`: 센서 초기화, 자세/고도/포지션 추정, 제어 루프, 상태/LED, 시리얼 명령 등 핵심 로직
-3. `AF1000X_BINDING.h`: RF 바인딩/홉테이블/패킷 처리
-4. `AF1000X_Hover.h`: Hover 학습 및 hoverThrottle 보정/저장
-5. `AF1000X_EasyCommander.h`: Takeoff/Land 등 간단 커맨드 래퍼
-6. `AF1000X_AutoTune.h`: 자동 튜닝 루틴
-7. `AF1000X_GPIO.h`: 핀맵 정의 (I2C/SPI/RF/모터/LED/ADC)
-8. `AF1000X_PID.h`: PID/제어 파라미터 정의
-
-### 프로젝트 구조
+### PC 허브 구조
 ```
-AF1000X/
-├─ AF1000X_Main.ino
-├─ AF1000X_CORE.h
-├─ AF1000X_BINDING.h
-├─ AF1000X_Hover.h
-├─ AF1000X_EasyCommander.h
-├─ AF1000X_AutoTune.h
-├─ AF1000X_GPIO.h
-├─ AF1000X_PID.h
-├─ README.md
+PC Script / Application
+          -> USB Serial (115200)
+     AF1000X Controller
+          -> nRF24
+            Drone
 ```
+
+조종기는 **안전 게이트**로 동작하며, PC에서 들어오는 위험한 명령을 그대로 통과시키지 않습니다.
+
+### 시리얼 명령
+- `AR1000X_Serial_Command_Reference.md`
+- `AR1000X_Controller_Operation.md` (핀/LED/버튼)
+
+### 군집 / AMC (최대 4대)
+AMC 모드로 여러 대 드론을 제어합니다.  
+명령 앞에 `D1`~`D4`를 붙이면 해당 드론에만 적용됩니다. 기본 타겟은 `D1`입니다.
+
+**예시**
+```
+ARM 1
+AMC ON
+D1 TAKEOFF
+D2 TAKEOFF
+D3 TAKEOFF
+D4 TAKEOFF
+D1 UP 120 1000
+D2 DOWN 120 1000
+EMERGENCY
+AMC OFF
+ARM 0
+```
+
+### 개발 환경
+1. Arduino IDE 2.3.x
+2. Board: Raspberry Pi Pico / RP2040
+3. USB Stack: Pico SDK (Default)
+4. Baudrate: 115200
+
+### 필요한 라이브러리
+Controller (AR1000X):
+1. RF24 by TMRh20
+
+Drone (AF1000X):
+1. RF24 by TMRh20
+2. VL53L1X by Pololu
+3. ICM45686 library (`ICM45686.h` 제공)
+4. Adafruit NeoPixel (WS2812C LED, GPIO17)
+
+Note: `Wire`, `SPI`, `EEPROM`, `Preferences`는 보드 코어에서 제공됩니다.
+
+### 라이브러리 링크 & 버전(테스트)
+Controller (AR1000X):
+1. RF24 by TMRh20 v1.5.0
+
+Drone (AF1000X):
+1. RF24 by TMRh20 v1.5.0
+2. VL53L1X by Pololu v1.3.1
+3. ICM45686 by TDK/Invensense v1.0.6
+4. Adafruit NeoPixel v1.15.2
+
+Links:
+```
+RF24: https://nRF24.github.io/RF24/
+VL53L1X: https://github.com/pololu/vl53l1x-arduino
+ICM45686: https://github.com/tdk-invn-oss/motion.arduino.ICM45686
+Adafruit NeoPixel: https://github.com/adafruit/Adafruit_NeoPixel
+```
+
+Note: 위 버전은 현재 개발 환경 기준이며, Library Manager 최신 버전도 사용 가능합니다.
+
+중요:  
+외부 TinyUSB 라이브러리가 있으면 충돌할 수 있습니다.  
+아래 경로의 라이브러리는 제거/비활성화 해주세요.
+```
+Documents/Arduino/libraries/Adafruit_TinyUSB_Library
+```
+
+### 기본 사용 흐름
+1. USB 연결 후 포트 확인
+2. PC에서 `ARM 1` 전송
+3. 이동/제어 명령 실행
+4. 필요 시 `EMERGENCY`
+5. 종료 전 `ARM 0` 전송
 
 ### 문의
-한국 주식회사 슈베아에서 개발한 FC이며, 제품 구입 문의는 `hello@1510.co.kr` 로 연락 부탁드립니다.
+SYUBEA Co., Ltd. (Korea)  
+구매 문의: `hello@1510.co.kr`
 
 ---
 
 ## 日本語
+### AF1000X ドローンコントローラ兼 PC ハブ送信機
 
 ### 概要
-AF1000Xは教育・研究目的の**マイクロドローン用ファームウェアプロジェクト**です。  
-PCBハードウェアからファームウェア、飛行制御ロジックまで**ドローンシステム全体を理解**できるように構成しています。
+**AF1000X Remote Controller** は RP2040 ベースの送信機で、**PC ハブ**として動作します。  
+PC の USB シリアル命令を RF 制御信号に変換してドローンへ送信します。
+
+- PC(USB Serial) -> AF1000X Controller(nRF24) -> Drone
+- ドローン側ファームウェアの変更不要
+- 教育・研究・自動化向け
 
 ### 主な機能
-1. IMUによる姿勢安定化（Roll / Pitch / Yaw）
-2. ToF + 気圧計（SPL06）の融合高度推定とホバリング
-3. オプティカルフロー（PMW3901）による位置補正
-4. nRF24L01 2.4GHz無線通信 + バインディング + ホップテーブル
-5. バッテリー電圧監視と警告/クリティカル処理
-6. LED状態表示（起動/バインディング/低電圧/ジャイロ/ヘッドレス/オートチューン）
-7. シリアルコマンド対応とIMUストリーミング（`1510` 開始、`1511` 停止）
+1. 物理ジョイスティック操作 (MODE 1/2 対応、既定 MODE 2)
+2. PC シリアル命令制御 (Hub Mode)
+3. ARM 安全ゲート + 200ms PC タイムアウト
+4. 緊急スロットルカット
+5. バッテリー電圧照会
+6. 固有 TX ID を EEPROM に保存 (起動時 GPIO10 押下で再生成)
+7. `DBUG` コマンド: 1秒周期でスティック/バッテリー/状態を出力
+8. USB デバイス名: `SYUBEA AF1000X Controller`
+9. GPIO12 ユーザーボタン: 短押し=ドローン LED 色変更(WS2812C, GPIO17)、長押し(1.5秒)=サーボ切替(GPIO36, 0~180 deg, 900~2000us)
+10. 群飛行/AMC モード: 1台のコントローラで最大4台(D1~D4)制御
 
-### 自動化機能
-1. 自動離陸 / 自動着陸
-2. Hover学習による `hoverThrottle` 自動補正・保存
-3. オプティカルフロー自動キャリブレーション（FlowK）シーケンス
-4. センサPOSTと自動初期化（IMU/ToF/Baro/Flow）
-5. リンク喪失時のフェイルセーフ：ホールド後に着陸
-6. 低電圧警告と緊急着陸処理
-7. Hover安定後の自動チューニング（高度PD + ヨーP）
+### ハードウェア
+1. MCU: RP2040
+2. RF: nRF24L01+
+3. USB: RP2040 Native USB (CDC)
+4. 入力: ジョイスティック, ボタン
+5. 出力: RF パケット
 
-### 特徴
-1. 教育/研究向けに最適化されたモジュール構造：`CORE`, `BINDING`, `HOVER`, `EasyCommander`, `AutoTune`, `GPIO`, `PID`
-2. PCツール提供：ファームウェアアップローダー（PYW + 自動依存関係インストール）とIMUビューア（PYW + 自動依存関係インストール、グラフ/3D姿勢表示）
-3. シリアル出力/ログによるデバッグが容易
-4. UIの韓国語/英語自動切り替えに対応
-
-### 主要チップセット仕様
-1. MCU: ESP32-S3（メインコントローラ）
-2. IMU: ICM45686（6軸加速度/ジャイロ、I2C）
-3. 気圧計: SPL06（圧力/高度、I2C）
-4. ToF: VL53L1X（距離/高度、I2C、XSHUT制御）
-5. オプティカルフロー: PMW3901（SPI）
-6. RF: nRF24L01（2.4GHz、SPI）
-7. バッテリーADC: 1S LiPo電圧モニタ（ADC）
-8. 基板サイズ: 35mm x 35mm
-9. モーター対応: 720 ~ 8250
-10. オートチューン: モーター/機体特性の自動補正
-
-### ファイル説明
-1. `AF1000X_Main.ino`: スケッチのエントリ、setup/loopおよびモジュール接続
-2. `AF1000X_CORE.h`: センサ初期化、姿勢/高度/位置推定、制御ループ、状態/LED、シリアルコマンド
-3. `AF1000X_BINDING.h`: RFバインディング、ホップテーブル、パケット処理
-4. `AF1000X_Hover.h`: Hover学習とhoverThrottleの補正/保存
-5. `AF1000X_EasyCommander.h`: Takeoff/Landなどの簡易コマンド
-6. `AF1000X_AutoTune.h`: 自動チューニングルーチン
-7. `AF1000X_GPIO.h`: ピンマップ定義（I2C/SPI/RF/モーター/LED/ADC）
-8. `AF1000X_PID.h`: PID/制御パラメータ定義
-
-### プロジェクト構成
+### PC ハブ構成
 ```
-AF1000X/
-├─ AF1000X_Main.ino
-├─ AF1000X_CORE.h
-├─ AF1000X_BINDING.h
-├─ AF1000X_Hover.h
-├─ AF1000X_EasyCommander.h
-├─ AF1000X_AutoTune.h
-├─ AF1000X_GPIO.h
-├─ AF1000X_PID.h
-├─ README.md
+PC Script / Application
+          -> USB Serial (115200)
+     AF1000X Controller
+          -> nRF24
+            Drone
 ```
+
+コントローラは **安全ゲート**として動作し、PC からの危険な入力をそのまま通しません。
+
+### シリアルコマンド
+- `AR1000X_Serial_Command_Reference.md`
+- `AR1000X_Controller_Operation.md` (ピン/LED/ボタン)
+
+### 群飛行 / AMC (最大4台)
+AMC モードで複数ドローンを制御します。  
+`D1`~`D4` を付けると指定ドローンのみに適用されます。既定ターゲットは `D1` です。
+
+**例**
+```
+ARM 1
+AMC ON
+D1 TAKEOFF
+D2 TAKEOFF
+D3 TAKEOFF
+D4 TAKEOFF
+D1 UP 120 1000
+D2 DOWN 120 1000
+EMERGENCY
+AMC OFF
+ARM 0
+```
+
+### 開発環境
+1. Arduino IDE 2.3.x
+2. Board: Raspberry Pi Pico / RP2040
+3. USB Stack: Pico SDK (Default)
+4. Baudrate: 115200
+
+### 必要ライブラリ
+Controller (AR1000X):
+1. RF24 by TMRh20
+
+Drone (AF1000X):
+1. RF24 by TMRh20
+2. VL53L1X by Pololu
+3. ICM45686 library (`ICM45686.h` 提供)
+4. Adafruit NeoPixel (WS2812C LED, GPIO17)
+
+Note: `Wire`, `SPI`, `EEPROM`, `Preferences` はボードコアに含まれます。
+
+### ライブラリリンク & バージョン(テスト)
+Controller (AR1000X):
+1. RF24 by TMRh20 v1.5.0
+
+Drone (AF1000X):
+1. RF24 by TMRh20 v1.5.0
+2. VL53L1X by Pololu v1.3.1
+3. ICM45686 by TDK/Invensense v1.0.6
+4. Adafruit NeoPixel v1.15.2
+
+Links:
+```
+RF24: https://nRF24.github.io/RF24/
+VL53L1X: https://github.com/pololu/vl53l1x-arduino
+ICM45686: https://github.com/tdk-invn-oss/motion.arduino.ICM45686
+Adafruit NeoPixel: https://github.com/adafruit/Adafruit_NeoPixel
+```
+
+Note: 上記は現在の開発環境のバージョンです。Library Manager の最新版も使用可能です。
+
+重要:  
+外部 TinyUSB ライブラリがあると競合する可能性があります。  
+以下のパスのライブラリは削除/無効化してください。
+```
+Documents/Arduino/libraries/Adafruit_TinyUSB_Library
+```
+
+### 基本使用手順
+1. USB 接続後、ポートを確認
+2. PC から `ARM 1` を送信
+3. 移動/制御コマンドを実行
+4. 必要時 `EMERGENCY`
+5. 終了前に `ARM 0` を送信
 
 ### お問い合わせ
-このFCは韓国のSYUBEA株式会社が開発しました。製品の購入に関するお問い合わせは `hello@1510.co.kr` までご連絡ください。
-
----
-
-© SYUBEA
+SYUBEA Co., Ltd. (Korea)  
+購入問い合わせ: `hello@1510.co.kr`
