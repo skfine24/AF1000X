@@ -11,6 +11,8 @@ This document describes the AF1000X Flight Controller (FC) as a smart education 
 - Headless mode
 - 360-degree flip (roll/pitch)
 - Self-righting (turtle mode)
+- Wi-Fi control input (APK-compatible, experimental)
+- Wi-Fi app control (APK-compatible, experimental)
 - Safety cut off (emergency stop and failsafe)
 - Control mode 1 and 2 supported (default: mode 2)
 - DIY auto setup: hover learning + auto tuning
@@ -55,6 +57,7 @@ This document describes the AF1000X Flight Controller (FC) as a smart education 
 6. If IMU or BARO fails, the system enters HARD LOCK (flight disabled) and keeps error LEDs on.
 7. If ToF fails, altitude hold continues using barometer only.
 8. If Flow fails, position correction is disabled.
+9. After POST, Wi-Fi AP starts for app control; if no client connects within 15 s, Wi-Fi turns off.
 
 POST message examples:
 ```
@@ -92,6 +95,19 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 - The controller scans nearby spectrum and selects low energy channels to build a hop table (FHSS).
 - Binding creates a unique ID (TX address) and hop table, then stores them in NVS
 - Binding mode: power on AF1000X upside down, then pair with AR1000X
+
+## Wi-Fi App Control (Experimental)
+- Connect to SSID `SYUBEA_1500AB`
+- Target IP/Port: `192.168.169.1:8800` (UDP)
+- Wi-Fi AP starts after POST and auto-off after 15 s if no client connects
+
+## Wi-Fi Control (Experimental)
+- AP starts after POST; if no client connects within 15 s, Wi-Fi turns off.
+- Test SSID: `SYUBEA_1500AB`
+- IP: `192.168.169.1`, UDP port: `8800`
+- Wi-Fi input maps to RC channels (Throttle/Roll/Pitch/Yaw).
+- Supported commands: headless, auto takeoff, gyro reset, emergency stop, flip.
+- RC override is always available; stick movement takes priority over Wi-Fi input.
 
 ### Identification Code
 - Binding ID is a 5 byte TX address (nRF24L01 address format)
@@ -151,6 +167,9 @@ See `IMG/README.md` for board images and mechanical details.
 - `AF1000X_GPIO.h` - pin definitions
 - `AF1000X_Hover.h` - hover and altitude control
 - `AF1000X_PID.h` - PID defaults and tuning constants
+- `AF1000X_WIFI.h` - Wi-Fi input bridge (experimental)
+- `WIFI.MD` - Wi-Fi command reference (experimental)
+- `af1000x_wifi_controller_ui.py` - Wi-Fi app test UI (Mode 2)
 
 ## Safety / Warnings
 - Always remove propellers before firmware updates or bench testing.
@@ -177,6 +196,7 @@ See `IMG/README.md` for board images and mechanical details.
 - 안전 차단(긴급 정지 및 페일세이프)
 - 조종 모드 1과 2 지원(기본값: 모드 2)
 - DIY 자동 설정: 호버 학습 + 자동 튜닝
+- Wi-Fi 앱을 통한 드론 조종(실험)
 
 ## 자동 설정(2)
 1. 호버 학습: 안정적인 호버를 기준으로 `hoverThrottle`을 자동으로 보정하고 저장합니다.
@@ -224,6 +244,7 @@ POST 메시지 예시:
 POST OK (IMU=1 BARO=1 TOF=1 FLOW=1)
 POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 ```
+9. POST 완료 후 Wi-Fi AP 시작, 15초 내 연결 없으면 Wi-Fi 자동 종료.
 
 ## LED 규칙(전원 켬)
 1. 센서 LED는 IMU, BARO, ToF, Flow에 매핑됨(LED1~LED4).
@@ -265,6 +286,12 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 ### 주파수 채널 테이블(기본)
 페어링 전 기본 홉 테이블:
 `63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74`
+
+
+## Wi-Fi 앱 조종(실험)
+- SSID: `SYUBEA_1500AB`
+- 대상 IP/포트: `192.168.169.1:8800` (UDP)
+- POST 후 AP 시작, 15초 내 미연결 시 자동 OFF
 
 ## 프로세서 및 연결성
 - MCU: ESP32-S3FN8
@@ -314,6 +341,9 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 - `AF1000X_GPIO.h` - 핀 정의
 - `AF1000X_Hover.h` - 호버 및 고도 제어
 - `AF1000X_PID.h` - PID 기본값 및 튜닝 상수
+- `AF1000X_WIFI.h` - Wi-Fi 입력 브릿지(실험)
+- `WIFI.MD` - Wi-Fi 명령 정리(실험)
+- `af1000x_wifi_controller_ui.py` - Wi-Fi 앱 테스트 UI (Mode 2)
 
 ## 안전 / 경고
 - 펌웨어 업데이트나 벤치 테스트 전에는 반드시 프로펠러를 분리하세요.
@@ -340,6 +370,7 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 - セーフティカットオフ(緊急停止およびフェイルセーフ)
 - 操縦モード1と2に対応(デフォルト: モード2)
 - DIY自動セットアップ: ホバー学習 + 自動チューニング
+- Wi-Fiアプリでドローン操作 (実験)
 
 ## 自動セットアップ(2)
 1. ホバー学習: 安定したホバーを基準に`hoverThrottle`を自動調整して保存します。
@@ -387,6 +418,7 @@ POSTメッセージ例:
 POST OK (IMU=1 BARO=1 TOF=1 FLOW=1)
 POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 ```
+9. POST完了後にWi-Fi AP開始。15秒以内に接続がなければWi-Fi自動OFF。
 
 ## LEDルール(電源オン)
 1. センサーLEDはIMU, BARO, ToF, Flowに対応(LED1〜LED4)。
@@ -428,6 +460,12 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 ### 周波数チャンネルテーブル(デフォルト)
 ペアリング前のデフォルトホップテーブル:
 `63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74`
+
+
+## Wi-Fiアプリ操作 (実験)
+- SSID: `SYUBEA_1500AB`
+- 送信先IP/ポート: `192.168.169.1:8800` (UDP)
+- POST後にAP開始。15秒以内に接続がなければ自動OFF
 
 ## プロセッサと接続性
 - MCU: ESP32-S3FN8
@@ -477,6 +515,9 @@ POST FAIL -> FLIGHT LOCK (IMU=0 BARO=1 TOF=1 FLOW=1)
 - `AF1000X_GPIO.h` - ピン定義
 - `AF1000X_Hover.h` - ホバーと高度制御
 - `AF1000X_PID.h` - PIDデフォルトとチューニング定数
+- `AF1000X_WIFI.h` - Wi-Fi入力ブリッジ(実験)
+- `WIFI.MD` - Wi-Fiコマンド整理(実験)
+- `af1000x_wifi_controller_ui.py` - Wi-FiアプリテストUI (Mode 2)
 
 ## 安全 / 警告
 - ファームウェア更新やベンチテストの前に、必ずプロペラを外してください。
